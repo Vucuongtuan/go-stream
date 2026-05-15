@@ -1,6 +1,12 @@
-
 package handler
 
+import (
+	"encoding/json"
+	"net/http"
+
+	"go-stream/internal/domain"
+	"go-stream/pkg/response"
+)
 
 type AuthHandler struct {
 	asv domain.AuthService
@@ -9,7 +15,6 @@ type AuthHandler struct {
 func NewAuthHandler(asv domain.AuthService) *AuthHandler {
 	return &AuthHandler{asv: asv}
 }
-
 
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -24,7 +29,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.asv.Register(req.Name, req.Email, req.Password)
 	if err != nil {
-		response.Error(w, http.StatusInternalServerError, err.Error())
+		response.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	response.Success(w, http.StatusCreated, user)
@@ -46,20 +51,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.Success(w, http.StatusOK, map[string]any{
-		"user":  user,
-		"token": token,
+		"user":         user,
+		"access_token": token,
 	})
-}
-
-func (h *AuthHandler) LoginWithOAuth(w http.ResponseWriter, r *http.Request) {
-	provider := r.PathValue("provider")
-	if provider == "" {
-		response.Error(w, http.StatusBadRequest, "Invalid provider")
-		return
-	}
-	
-	if provider == "google" {
-		
-	}
-
-}
+}

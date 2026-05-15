@@ -21,7 +21,17 @@ func ConnectDB() *gorm.DB {
 
 	logger.Info("Database connected successfully")
 
-	err = db.AutoMigrate(&domain.User{}, &domain.Identity{})
+	err = db.AutoMigrate(
+		&domain.User{},
+		&domain.Identity{},
+		&domain.Author{},
+		&domain.SocialLink{},
+		&domain.Category{},
+		&domain.Game{},
+		&domain.Room{},
+		&domain.StreamSession{},
+		&domain.ShortVideo{},
+	)
 	logger.FatalIfError(err, "Failed to run database migration")
 
 	return db

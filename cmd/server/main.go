@@ -9,6 +9,7 @@ import (
 	"go-stream/internal/repository"
 	"go-stream/internal/router"
 	"go-stream/internal/service"
+	"go-stream/pkg/chat"
 	"go-stream/pkg/logger"
 )
 
@@ -22,14 +23,28 @@ func main() {
 	// Connect Database
 	db := database.ConnectDB()
 
-	// Setup Dependency Injection for module User
+	// Setup Dependency Injection
 	userRepo := repository.NewUserRepository(db)
+	identityRepo := repository.NewIdentityRepository(db)
+	roomRepo := repository.NewRoomRepository(db)
+
 	userSvc := service.NewUserService(userRepo)
+	authSvc := service.NewAuthService(userRepo, identityRepo)
+	roomSvc := service.NewRoomService(roomRepo)
+	searchSvc := service.NewSearchService(db)
+
+	chatHub := chat.NewHub()
+
 	userHandler := handler.NewUserHandler(userSvc)
+	authHandler := handler.NewAuthHandler(authSvc)
+	roomHandler := handler.NewRoomHandler(roomSvc)
+	chatHandler := handler.NewChatHandler(chatHub)
+	ingestHandler := handler.NewIngestHandler(roomRepo, chatHub)
+	searchHandler := handler.NewSearchHandler(searchSvc)
 
 	// Config router
 	mux := http.NewServeMux()
-	router.SetupRoutes(mux, userHandler)
+	router.SetupRoutes(mux, userHandler, authHandler, roomHandler, chatHandler, ingestHandler, searchHandler)
 
 	// Port
 	port := config.GetEnv("PORT", "3000")

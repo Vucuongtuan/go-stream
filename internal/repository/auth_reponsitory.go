@@ -1,52 +1,50 @@
-
-
-
 package repository
 
 import (
 	"go-stream/internal/domain"
-	"go-stream/pkg/logger"
 
 	"gorm.io/gorm"
 )
 
-type UserRepository struct {
+type identityRepository struct {
 	db *gorm.DB
 }
 
-func NewUserRepository(db *gorm.DB) domain.UserRepository {
-	return &UserRepository{db: db}
+func NewIdentityRepository(db *gorm.DB) domain.IdentityRepository {
+	return &identityRepository{db: db}
 }
 
-
-func (r *UserRepository) FindByProviderAndEmail(provider domain.IdentityProvider, email string) (*domain.User, error) {
-	var user domain.User
-	if err := r.db.Where("provider = ? AND email = ?", provider, email).First(&user).Error; err != nil {
+func (r *identityRepository) FindByProviderAndEmail(provider domain.IdentityProvider, email string) (*domain.Identity, error) {
+	var identity domain.Identity
+	err := r.db.Where("provider = ? AND email = ?", provider, email).First(&identity).Error
+	if err != nil {
 		return nil, err
 	}
-	return &user, nil
+	return &identity, nil
 }
 
-func (r *UserRepository) FindByProviderUserID(provider domain.IdentityProvider, providerUserID string) (*domain.User, error) {
-	var user domain.User
-	if err := r.db.Where("provider = ? AND provider_user_id = ?", provider, providerUserID).First(&user).Error; err != nil {
+func (r *identityRepository) FindByProviderUserID(provider domain.IdentityProvider, providerUserID string) (*domain.Identity, error) {
+	var identity domain.Identity
+	err := r.db.Where("provider = ? AND provider_user_id = ?", provider, providerUserID).First(&identity).Error
+	if err != nil {
 		return nil, err
 	}
-	return &user, nil
+	return &identity, nil
 }
 
-func (r *UserRepository) FindBySAML(idpID, nameID string) (*domain.User, error) {
-	var user domain.User
-	if err := r.db.Where("idp_id = ? AND name_id = ?", idpID, nameID).First(&user).Error; err != nil {
+func (r *identityRepository) FindBySAML(idpID, nameID string) (*domain.Identity, error) {
+	var identity domain.Identity
+	err := r.db.Where("idp_id = ? AND name_id = ?", idpID, nameID).First(&identity).Error
+	if err != nil {
 		return nil, err
 	}
-	return &user, nil
+	return &identity, nil
 }
 
-func (r *UserRepository) Create(user *domain.User) error {
-	return r.db.Create(user).Error
+func (r *identityRepository) Create(identity *domain.Identity) error {
+	return r.db.Create(identity).Error
 }
 
-func (r *UserRepository) Update(user *domain.User) error {
-	return r.db.Save(user).Error
+func (r *identityRepository) Update(identity *domain.Identity) error {
+	return r.db.Save(identity).Error
 }
