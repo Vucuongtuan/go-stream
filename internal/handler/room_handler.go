@@ -18,7 +18,23 @@ func NewRoomHandler(svc domain.RoomService) *RoomHandler {
 }
 
 func (h *RoomHandler) GetLiveRooms(w http.ResponseWriter, r *http.Request) {
-	rooms, err := h.svc.GetLiveRooms()
+	var categoryID *uint
+	if cStr := r.URL.Query().Get("category_id"); cStr != "" {
+		if c, err := strconv.ParseUint(cStr, 10, 64); err == nil {
+			cUint := uint(c)
+			categoryID = &cUint
+		}
+	}
+
+	var gameID *uint
+	if gStr := r.URL.Query().Get("game_id"); gStr != "" {
+		if g, err := strconv.ParseUint(gStr, 10, 64); err == nil {
+			gUint := uint(g)
+			gameID = &gUint
+		}
+	}
+
+	rooms, err := h.svc.GetLiveRooms(categoryID, gameID)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, err.Error())
 		return
