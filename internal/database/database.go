@@ -31,9 +31,11 @@ func ConnectDB() *gorm.DB {
 		&domain.Room{},
 		&domain.StreamSession{},
 		&domain.ShortVideo{},
+		&domain.Tag{},
+		&domain.RoomTag{},
+		&domain.ShortVideoTag{},
 	)
 	logger.FatalIfError(err, "Failed to run database migration")
 
 	return db
 }
-

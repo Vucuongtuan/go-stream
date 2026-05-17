@@ -70,12 +70,12 @@ func (h *RoomHandler) CreateRoom(w http.ResponseWriter, r *http.Request) {
 	hostID := r.Context().Value("user_id").(uint)
 
 	var req struct {
-		Title       string                 `json:"title"`
-		Description string                 `json:"description"`
-		CategoryID  *uint                  `json:"category_id"`
-		GameID      *uint                  `json:"game_id"`
-		Tags        string                 `json:"tags"`
-		Visibility  domain.RoomVisibility  `json:"visibility"`
+		Title       string                `json:"title"`
+		Description string                `json:"description"`
+		CategoryID  *uint                 `json:"category_id"`
+		GameID      *uint                 `json:"game_id"`
+		TagIDs      []uint                `json:"tag_ids"`
+		Visibility  domain.RoomVisibility `json:"visibility"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Error(w, http.StatusBadRequest, "Invalid request body")
@@ -89,7 +89,7 @@ func (h *RoomHandler) CreateRoom(w http.ResponseWriter, r *http.Request) {
 		req.Visibility = domain.RoomVisibilityPublic
 	}
 
-	room, err := h.svc.CreateRoom(hostID, req.Title, req.Description, req.CategoryID, req.GameID, req.Tags, req.Visibility)
+	room, err := h.svc.CreateRoom(hostID, req.Title, req.Description, req.CategoryID, req.GameID, req.TagIDs, req.Visibility)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, err.Error())
 		return
@@ -141,7 +141,7 @@ func (h *RoomHandler) UpdateRoom(w http.ResponseWriter, r *http.Request) {
 		Description string                `json:"description"`
 		CategoryID  *uint                 `json:"category_id"`
 		GameID      *uint                 `json:"game_id"`
-		Tags        string                `json:"tags"`
+		TagIDs      []uint                `json:"tag_ids"`
 		Visibility  domain.RoomVisibility `json:"visibility"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -149,7 +149,7 @@ func (h *RoomHandler) UpdateRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	room, err := h.svc.UpdateRoom(id, hostID, req.Title, req.Description, req.CategoryID, req.GameID, req.Tags, req.Visibility)
+	room, err := h.svc.UpdateRoom(id, hostID, req.Title, req.Description, req.CategoryID, req.GameID, req.TagIDs, req.Visibility)
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, err.Error())
 		return

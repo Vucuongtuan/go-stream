@@ -26,11 +26,15 @@ func main() {
 	// Setup Dependency Injection
 	userRepo := repository.NewUserRepository(db)
 	identityRepo := repository.NewIdentityRepository(db)
+	tagRepo := repository.NewTagRepository(db)
 	roomRepo := repository.NewRoomRepository(db)
+	categoryRepo := repository.NewCategoryRepository(db)
 
 	userSvc := service.NewUserService(userRepo)
 	authSvc := service.NewAuthService(userRepo, identityRepo)
-	roomSvc := service.NewRoomService(roomRepo)
+	tagSvc := service.NewTagService(tagRepo)
+	roomSvc := service.NewRoomService(roomRepo, tagRepo)
+	categorySvc := service.NewCategoryService(categoryRepo)
 	searchSvc := service.NewSearchService(db)
 
 	chatHub := chat.NewHub()
@@ -41,10 +45,12 @@ func main() {
 	chatHandler := handler.NewChatHandler(chatHub)
 	ingestHandler := handler.NewIngestHandler(roomRepo, chatHub)
 	searchHandler := handler.NewSearchHandler(searchSvc)
+	categoryHandler := handler.NewCategoryHandler(categorySvc)
+	tagHandler := handler.NewTagHandler(tagSvc)
 
 	// Config router
 	mux := http.NewServeMux()
-	router.SetupRoutes(mux, userHandler, authHandler, roomHandler, chatHandler, ingestHandler, searchHandler)
+	router.SetupRoutes(mux, userHandler, authHandler, roomHandler, chatHandler, ingestHandler, searchHandler, categoryHandler, tagHandler)
 
 	// Port
 	port := config.GetEnv("PORT", "3000")
