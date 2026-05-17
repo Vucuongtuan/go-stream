@@ -16,7 +16,7 @@ func NewRoomRepository(db *gorm.DB) domain.RoomRepository {
 
 func (r *roomRepository) FindAll(filter domain.RoomFilter) ([]domain.Room, error) {
 	var rooms []domain.Room
-	q := r.db.Preload("Host")
+	q := r.db.Preload("Host").Preload("Category").Preload("Game").Preload("Tags")
 
 	if filter.Status != nil {
 		q = q.Where("status = ?", *filter.Status)
@@ -26,6 +26,12 @@ func (r *roomRepository) FindAll(filter domain.RoomFilter) ([]domain.Room, error
 	}
 	if filter.HostID != nil {
 		q = q.Where("host_id = ?", *filter.HostID)
+	}
+	if filter.CategoryID != nil {
+		q = q.Where("category_id = ?", *filter.CategoryID)
+	}
+	if filter.GameID != nil {
+		q = q.Where("game_id = ?", *filter.GameID)
 	}
 	if filter.Limit > 0 {
 		q = q.Limit(filter.Limit)
@@ -39,7 +45,7 @@ func (r *roomRepository) FindAll(filter domain.RoomFilter) ([]domain.Room, error
 
 func (r *roomRepository) FindByID(id uint) (*domain.Room, error) {
 	var room domain.Room
-	err := r.db.Preload("Host").First(&room, id).Error
+	err := r.db.Preload("Host").Preload("Category").Preload("Game").Preload("Tags").First(&room, id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +63,7 @@ func (r *roomRepository) FindByStreamKey(key string) (*domain.Room, error) {
 
 func (r *roomRepository) FindByHostID(hostID uint) ([]domain.Room, error) {
 	var rooms []domain.Room
-	err := r.db.Where("host_id = ?", hostID).Find(&rooms).Error
+	err := r.db.Preload("Tags").Where("host_id = ?", hostID).Find(&rooms).Error
 	return rooms, err
 }
 
