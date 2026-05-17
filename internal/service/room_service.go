@@ -10,11 +10,12 @@ import (
 )
 
 type roomService struct {
-	repo domain.RoomRepository
+	repo    domain.RoomRepository
+	tagRepo domain.TagRepository
 }
 
-func NewRoomService(repo domain.RoomRepository) domain.RoomService {
-	return &roomService{repo: repo}
+func NewRoomService(repo domain.RoomRepository, tagRepo domain.TagRepository) domain.RoomService {
+	return &roomService{repo: repo, tagRepo: tagRepo}
 }
 
 func (s *roomService) GetLiveRooms(categoryID *uint, gameID *uint) ([]domain.Room, error) {
@@ -36,7 +37,7 @@ func (s *roomService) GetRoomsByHost(hostID uint) ([]domain.Room, error) {
 	return s.repo.FindByHostID(hostID)
 }
 
-func (s *roomService) CreateRoom(hostID uint, title, description string, categoryID, gameID *uint, tags string, visibility domain.RoomVisibility) (*domain.Room, error) {
+func (s *roomService) CreateRoom(hostID uint, title, description string, categoryID, gameID *uint, tagIDs []uint, visibility domain.RoomVisibility) (*domain.Room, error) {
 	key, err := generateStreamKey()
 	if err != nil {
 		return nil, err
@@ -48,7 +49,6 @@ func (s *roomService) CreateRoom(hostID uint, title, description string, categor
 		GameID:      gameID,
 		Title:       title,
 		Description: description,
-		Tags:        tags,
 		Visibility:  visibility,
 		Status:      domain.RoomStatusOffline,
 		StreamKey:   key,
@@ -56,7 +56,14 @@ func (s *roomService) CreateRoom(hostID uint, title, description string, categor
 	if err := s.repo.Create(room); err != nil {
 		return nil, err
 	}
-	return room, nil
+
+	if len(tagIDs) > 0 {
+		if err := s.tagRepo.SyncRoomTags(room.ID, tagIDs); err != nil {
+			return nil, err
+		}
+	}
+
+	return s.repo.FindByID(room.ID)
 }
 
 func (s *roomService) GoLive(roomID, hostID uint) (*domain.Room, error) {
@@ -98,7 +105,7 @@ func (s *roomService) EndStream(roomID, hostID uint) error {
 	return s.repo.Update(room)
 }
 
-func (s *roomService) UpdateRoom(roomID, hostID uint, title, description string, categoryID, gameID *uint, tags string, visibility domain.RoomVisibility) (*domain.Room, error) {
+func (s *roomService) UpdateRoom(roomID, hostID uint, title, description string, categoryID, gameID *uint, tagIDs []uint, visibility domain.RoomVisibility) (*domain.Room, error) {
 	room, err := s.repo.FindByID(roomID)
 	if err != nil {
 		return nil, err
@@ -111,10 +118,17 @@ func (s *roomService) UpdateRoom(roomID, hostID uint, title, description string,
 	room.Description = description
 	room.CategoryID = categoryID
 	room.GameID = gameID
-	room.Tags = tags
 	room.Visibility = visibility
 
-	return room, s.repo.Update(room)
+	if err := s.repo.Update(room); err != nil {
+		return nil, err
+	}
+
+	if err := s.tagRepo.SyncRoomTags(roomID, tagIDs); err != nil {
+		return nil, err
+	}
+
+	return s.repo.FindByID(roomID)
 }
 
 func (s *roomService) DeleteRoom(roomID, hostID uint) error {
@@ -128,7 +142,6 @@ func (s *roomService) DeleteRoom(roomID, hostID uint) error {
 	return s.repo.Delete(roomID)
 }
 
-// generateStreamKey tạo random stream key 32 bytes hex
 func generateStreamKey() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {

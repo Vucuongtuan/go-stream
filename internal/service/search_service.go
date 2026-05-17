@@ -41,9 +41,12 @@ func (s *sqliteSearchService) SearchGlobal(query string, limit int) (*domain.Sea
 	}
 
 	// 1. Search Live Rooms (only live and public)
-	err := s.db.Preload("Host").Preload("Category").Preload("Game").
-		Where("status = ? AND visibility = ?", domain.RoomStatusLive, domain.RoomVisibilityPublic).
-		Where("(title LIKE ? OR tags LIKE ? OR description LIKE ?)", likeQuery, likeQuery, likeQuery).
+	err := s.db.Preload("Host").Preload("Category").Preload("Game").Preload("Tags").
+		Joins("LEFT JOIN room_tags ON room_tags.room_id = rooms.id").
+		Joins("LEFT JOIN tags ON tags.id = room_tags.tag_id").
+		Where("rooms.status = ? AND rooms.visibility = ?", domain.RoomStatusLive, domain.RoomVisibilityPublic).
+		Where("(rooms.title LIKE ? OR rooms.description LIKE ? OR tags.name LIKE ?)", likeQuery, likeQuery, likeQuery).
+		Group("rooms.id").
 		Limit(limit).
 		Find(&result.Rooms).Error
 	if err != nil {
@@ -54,7 +57,7 @@ func (s *sqliteSearchService) SearchGlobal(query string, limit int) (*domain.Sea
 	// Need to join User to search by Username or DisplayName
 	err = s.db.Preload("User").
 		Joins("JOIN users ON authors.user_id = users.id").
-		Where("users.username LIKE ? OR users.display_name LIKE ? OR authors.bio LIKE ?", likeQuery, likeQuery, likeQuery).
+		Where("authors.display_name LIKE ? OR users.name LIKE ? OR authors.bio LIKE ?", likeQuery, likeQuery, likeQuery).
 		Limit(limit).
 		Find(&result.Authors).Error
 	if err != nil {
