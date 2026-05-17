@@ -55,7 +55,7 @@ func SetupRoutes(
 
 	mux.HandleFunc("GET /api/categories", categoryHandler.GetAllCategories)
 	mux.HandleFunc("GET /api/categories/{id}", categoryHandler.GetCategoryByID)
-	mux.HandleFunc("GET /api/categories/slug/{slug}", categoryHandler.GetCategoryBySlug)
+	mux.HandleFunc("GET /api/category/slug/{slug}", categoryHandler.GetCategoryBySlug)
 	mux.HandleFunc("GET /api/categories/{id}/games", categoryHandler.GetGamesByCategory)
 	mux.Handle("POST /api/categories", auth(categoryHandler.CreateCategory))
 	mux.Handle("PUT /api/categories/{id}", auth(categoryHandler.UpdateCategory))
