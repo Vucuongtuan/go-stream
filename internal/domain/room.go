@@ -27,16 +27,13 @@ type Room struct {
 	Title       string         `gorm:"not null;size:255"       json:"title"`
 	Description string         `gorm:"size:2000"               json:"description,omitempty"`
 	Thumbnail   string         `gorm:"size:512"                json:"thumbnail,omitempty"`
-	Tags        string         `gorm:"size:500"                json:"tags,omitempty"` // comma-separated tags
 	StreamKey   string         `gorm:"uniqueIndex;size:64"     json:"-"`
 	Status      RoomStatus     `gorm:"default:offline;size:20" json:"status"`
 	Visibility  RoomVisibility `gorm:"default:public;size:20"  json:"visibility"`
 
-	// HLS playback — populated after ingest server starts transcoding
 	PlaybackURL string `gorm:"size:512" json:"playback_url,omitempty"`
 	VodURL      string `gorm:"size:512" json:"vod_url,omitempty"`
 
-	// Quality preset — passed to FFmpeg
 	Quality string `gorm:"default:auto;size:20" json:"quality"`
 
 	ViewerCount int        `gorm:"-"      json:"viewer_count"`
@@ -49,6 +46,7 @@ type Room struct {
 	Host     User      `gorm:"foreignKey:HostID"     json:"host,omitempty"`
 	Category *Category `gorm:"foreignKey:CategoryID" json:"category,omitempty"`
 	Game     *Game     `gorm:"foreignKey:GameID"     json:"game,omitempty"`
+	Tags     []Tag     `gorm:"many2many:room_tags"    json:"tags,omitempty"`
 }
 
 type RoomRepository interface {
@@ -75,9 +73,9 @@ type RoomService interface {
 	GetLiveRooms(categoryID *uint, gameID *uint) ([]Room, error)
 	GetRoomByID(id uint) (*Room, error)
 	GetRoomsByHost(hostID uint) ([]Room, error)
-	CreateRoom(hostID uint, title, description string, categoryID, gameID *uint, tags string, visibility RoomVisibility) (*Room, error)
+	CreateRoom(hostID uint, title, description string, categoryID, gameID *uint, tagIDs []uint, visibility RoomVisibility) (*Room, error)
 	GoLive(roomID, hostID uint) (*Room, error)
 	EndStream(roomID, hostID uint) error
-	UpdateRoom(roomID, hostID uint, title, description string, categoryID, gameID *uint, tags string, visibility RoomVisibility) (*Room, error)
+	UpdateRoom(roomID, hostID uint, title, description string, categoryID, gameID *uint, tagIDs []uint, visibility RoomVisibility) (*Room, error)
 	DeleteRoom(roomID, hostID uint) error
 }
