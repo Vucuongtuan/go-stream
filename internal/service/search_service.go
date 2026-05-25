@@ -8,17 +8,17 @@ import (
 	"gorm.io/gorm"
 )
 
-type sqliteSearchService struct {
+type dbSearchService struct {
 	db *gorm.DB
 }
 
 func NewSearchService(db *gorm.DB) domain.SearchService {
-	return &sqliteSearchService{db: db}
+	return &dbSearchService{db: db}
 }
 
-// SearchGlobal queries the SQLite database directly using LIKE.
+// SearchGlobal queries the database directly using ILIKE.
 // This is a temporary solution before moving to a dedicated search engine.
-func (s *sqliteSearchService) SearchGlobal(query string, limit int) (*domain.SearchResult, error) {
+func (s *dbSearchService) SearchGlobal(query string, limit int) (*domain.SearchResult, error) {
 	if query == "" {
 		return &domain.SearchResult{
 			Rooms:   []domain.Room{},
@@ -27,8 +27,7 @@ func (s *sqliteSearchService) SearchGlobal(query string, limit int) (*domain.Sea
 		}, nil
 	}
 
-	// SQLite is case-insensitive for LIKE with ASCII characters by default.
-	// For a better match, we wrap the query in wildcards.
+	// PostgreSQL uses ILIKE for case-insensitive search.
 	likeQuery := fmt.Sprintf("%%%s%%", strings.TrimSpace(query))
 	if limit <= 0 || limit > 50 {
 		limit = 10
@@ -45,7 +44,7 @@ func (s *sqliteSearchService) SearchGlobal(query string, limit int) (*domain.Sea
 		Joins("LEFT JOIN room_tags ON room_tags.room_id = rooms.id").
 		Joins("LEFT JOIN tags ON tags.id = room_tags.tag_id").
 		Where("rooms.status = ? AND rooms.visibility = ?", domain.RoomStatusLive, domain.RoomVisibilityPublic).
-		Where("(rooms.title LIKE ? OR rooms.description LIKE ? OR tags.name LIKE ?)", likeQuery, likeQuery, likeQuery).
+		Where("(rooms.title ILIKE ? OR rooms.description ILIKE ? OR tags.name ILIKE ?)", likeQuery, likeQuery, likeQuery).
 		Group("rooms.id").
 		Limit(limit).
 		Find(&result.Rooms).Error
@@ -57,7 +56,7 @@ func (s *sqliteSearchService) SearchGlobal(query string, limit int) (*domain.Sea
 	// Need to join User to search by Username or DisplayName
 	err = s.db.Preload("User").
 		Joins("JOIN users ON authors.user_id = users.id").
-		Where("authors.display_name LIKE ? OR users.name LIKE ? OR authors.bio LIKE ?", likeQuery, likeQuery, likeQuery).
+		Where("authors.display_name ILIKE ? OR users.name ILIKE ? OR authors.bio ILIKE ?", likeQuery, likeQuery, likeQuery).
 		Limit(limit).
 		Find(&result.Authors).Error
 	if err != nil {
@@ -66,7 +65,7 @@ func (s *sqliteSearchService) SearchGlobal(query string, limit int) (*domain.Sea
 
 	// 3. Search Games
 	err = s.db.Preload("Category").
-		Where("name LIKE ? OR slug LIKE ?", likeQuery, likeQuery).
+		Where("name ILIKE ? OR slug ILIKE ?", likeQuery, likeQuery).
 		Limit(limit).
 		Find(&result.Games).Error
 	if err != nil {

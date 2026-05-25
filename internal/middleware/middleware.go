@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"go-stream/internal/config"
+	"go-stream/internal/domain"
 	"go-stream/internal/utils"
 	"go-stream/pkg/response"
 )
@@ -93,4 +94,38 @@ func realIP(r *http.Request) string {
 		return ip[:i]
 	}
 	return ip
+}
+
+// AdminOnly checks if the authenticated user has the 'admin' role.
+func AdminOnly(userRepo domain.UserRepository, next http.HandlerFunc) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		userID, ok := r.Context().Value(ContextKeyUserID).(uint)
+		if !ok || userID == 0 {
+			token := extractBearerToken(r)
+			if token == "" {
+				response.Error(w, http.StatusUnauthorized, "Missing authorization token")
+				return
+			}
+			secret := []byte(config.GetEnv("JWT_SECRET", "changeme"))
+			claims, err := utils.ValidateAccessToken(token, secret)
+			if err != nil {
+				response.Error(w, http.StatusUnauthorized, "Invalid or expired token")
+				return
+			}
+			userID = claims.UserID
+		}
+
+		user, err := userRepo.FindByID(userID)
+		if err != nil || user == nil {
+			response.Error(w, http.StatusUnauthorized, "User not found")
+			return
+		}
+
+		if user.Role != "admin" {
+			response.Error(w, http.StatusForbidden, "Quyền truy cập bị từ chối: Chỉ dành cho Admin")
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }

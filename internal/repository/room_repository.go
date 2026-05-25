@@ -67,6 +67,18 @@ func (r *roomRepository) FindByHostID(hostID uint) ([]domain.Room, error) {
 	return rooms, err
 }
 
+func (r *roomRepository) FindByHostSlug(slug string) (*domain.Room, error) {
+	var room domain.Room
+	err := r.db.Preload("Host").Preload("Category").Preload("Game").Preload("Tags").
+		Joins("JOIN users ON users.id = rooms.host_id").
+		Where("users.slug = ?", slug).
+		First(&room).Error
+	if err != nil {
+		return nil, err
+	}
+	return &room, nil
+}
+
 func (r *roomRepository) Create(room *domain.Room) error {
 	return r.db.Create(room).Error
 }

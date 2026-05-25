@@ -29,6 +29,7 @@ func main() {
 	tagRepo := repository.NewTagRepository(db)
 	roomRepo := repository.NewRoomRepository(db)
 	categoryRepo := repository.NewCategoryRepository(db)
+	authorRepo := repository.NewAuthorRepository(db)
 
 	userSvc := service.NewUserService(userRepo)
 	authSvc := service.NewAuthService(userRepo, identityRepo)
@@ -36,21 +37,23 @@ func main() {
 	roomSvc := service.NewRoomService(roomRepo, tagRepo)
 	categorySvc := service.NewCategoryService(categoryRepo)
 	searchSvc := service.NewSearchService(db)
+	authorSvc := service.NewAuthorService(authorRepo)
 
 	chatHub := chat.NewHub()
 
 	userHandler := handler.NewUserHandler(userSvc)
 	authHandler := handler.NewAuthHandler(authSvc)
 	roomHandler := handler.NewRoomHandler(roomSvc)
-	chatHandler := handler.NewChatHandler(chatHub)
+	chatHandler := handler.NewChatHandler(chatHub, userRepo)
 	ingestHandler := handler.NewIngestHandler(roomRepo, chatHub)
 	searchHandler := handler.NewSearchHandler(searchSvc)
 	categoryHandler := handler.NewCategoryHandler(categorySvc)
 	tagHandler := handler.NewTagHandler(tagSvc)
+	authorHandler := handler.NewAuthorHandler(authorSvc, authorRepo)
 
 	// Config router
 	mux := http.NewServeMux()
-	router.SetupRoutes(mux, userHandler, authHandler, roomHandler, chatHandler, ingestHandler, searchHandler, categoryHandler, tagHandler)
+	router.SetupRoutes(mux, userHandler, authHandler, roomHandler, chatHandler, ingestHandler, searchHandler, categoryHandler, tagHandler, authorHandler, userRepo)
 
 	// Port
 	port := config.GetEnv("PORT", "3000")

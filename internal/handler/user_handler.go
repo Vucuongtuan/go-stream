@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"go-stream/internal/domain"
+	"go-stream/internal/middleware"
 	"go-stream/pkg/response"
 )
 
@@ -14,6 +15,21 @@ type UserHandler struct {
 
 func NewUserHandler(usv domain.UserService) *UserHandler {
 	return &UserHandler{usv: usv}
+}
+
+func (h *UserHandler) GetMe(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(middleware.ContextKeyUserID).(uint)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "Người dùng chưa đăng nhập")
+		return
+	}
+
+	user, err := h.usv.GetUserByID(userID)
+	if err != nil {
+		response.Error(w, http.StatusNotFound, "Không tìm thấy thông tin người dùng")
+		return
+	}
+	response.Success(w, http.StatusOK, user)
 }
 
 func (h *UserHandler) GetUsers(w http.ResponseWriter, r *http.Request) {

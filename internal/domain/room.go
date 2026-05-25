@@ -54,6 +54,7 @@ type RoomRepository interface {
 	FindByID(id uint) (*Room, error)
 	FindByStreamKey(key string) (*Room, error)
 	FindByHostID(hostID uint) ([]Room, error)
+	FindByHostSlug(slug string) (*Room, error)
 	Create(room *Room) error
 	Update(room *Room) error
 	Delete(id uint) error
@@ -73,6 +74,7 @@ type RoomService interface {
 	GetLiveRooms(categoryID *uint, gameID *uint) ([]Room, error)
 	GetRoomByID(id uint) (*Room, error)
 	GetRoomsByHost(hostID uint) ([]Room, error)
+	GetRoomByHostSlug(slug string) (*Room, error)
 	CreateRoom(hostID uint, title, description string, categoryID, gameID *uint, tagIDs []uint, visibility RoomVisibility) (*Room, error)
 	GoLive(roomID, hostID uint) (*Room, error)
 	EndStream(roomID, hostID uint) error

@@ -38,7 +38,11 @@ func (s *authService) Register(name, email, password string) (*domain.User, erro
 		return nil, err
 	}
 
-	user := &domain.User{Name: name}
+	user := &domain.User{
+		Name:  name,
+		Email: email,
+		Slug:  utils.GenerateSlug(name),
+	}
 	if err := s.userRepo.Create(user); err != nil {
 		return nil, err
 	}
@@ -91,7 +95,12 @@ func (s *authService) LoginWithOAuth(
 	var user *domain.User
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		user = &domain.User{Name: name, Avatar: avatar}
+		user = &domain.User{
+			Name:   name,
+			Email:  email,
+			Slug:   utils.GenerateSlug(name),
+			Avatar: avatar,
+		}
 		if err := s.userRepo.Create(user); err != nil {
 			return nil, "", err
 		}
@@ -137,7 +146,11 @@ func (s *authService) LoginWithSAML(idpID, nameID, name, email string) (*domain.
 	var user *domain.User
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		user = &domain.User{Name: name}
+		user = &domain.User{
+			Name:  name,
+			Email: email,
+			Slug:  utils.GenerateSlug(name),
+		}
 		if err := s.userRepo.Create(user); err != nil {
 			return nil, "", err
 		}

@@ -37,6 +37,10 @@ func (s *roomService) GetRoomsByHost(hostID uint) ([]domain.Room, error) {
 	return s.repo.FindByHostID(hostID)
 }
 
+func (s *roomService) GetRoomByHostSlug(slug string) (*domain.Room, error) {
+	return s.repo.FindByHostSlug(slug)
+}
+
 func (s *roomService) CreateRoom(hostID uint, title, description string, categoryID, gameID *uint, tagIDs []uint, visibility domain.RoomVisibility) (*domain.Room, error) {
 	key, err := generateStreamKey()
 	if err != nil {

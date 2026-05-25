@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"go-stream/internal/domain"
+	"go-stream/internal/middleware"
 	"go-stream/pkg/chat"
 	"go-stream/pkg/response"
 
@@ -15,11 +16,12 @@ import (
 )
 
 type ChatHandler struct {
-	hub *chat.Hub
+	hub      *chat.Hub
+	userRepo domain.UserRepository
 }
 
-func NewChatHandler(hub *chat.Hub) *ChatHandler {
-	return &ChatHandler{hub: hub}
+func NewChatHandler(hub *chat.Hub, userRepo domain.UserRepository) *ChatHandler {
+	return &ChatHandler{hub: hub, userRepo: userRepo}
 }
 
 // Stream — SSE endpoint, client subscribe để nhận tin realtime
@@ -74,9 +76,22 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := r.Context().Value("user_id").(uint)
-	userName := r.Context().Value("user_name").(string)
-	avatar, _ := r.Context().Value("avatar").(string)
+	userID, ok := r.Context().Value(middleware.ContextKeyUserID).(uint)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	// Fetch user details from database to avoid panics on missing context keys
+	var userName string
+	var avatar string
+	user, err := h.userRepo.FindByID(userID)
+	if err == nil && user != nil {
+		userName = user.Name
+		avatar = user.Avatar
+	} else {
+		userName = fmt.Sprintf("User %d", userID)
+	}
 
 	var req struct {
 		Content string                  `json:"content"`

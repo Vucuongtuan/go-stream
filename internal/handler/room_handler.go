@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"go-stream/internal/domain"
+	"go-stream/internal/middleware"
 	"go-stream/pkg/response"
 )
 
@@ -56,8 +57,22 @@ func (h *RoomHandler) GetRoom(w http.ResponseWriter, r *http.Request) {
 	response.Success(w, http.StatusOK, room)
 }
 
+func (h *RoomHandler) GetRoomBySlug(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+	if slug == "" {
+		response.Error(w, http.StatusBadRequest, "Slug is required")
+		return
+	}
+	room, err := h.svc.GetRoomByHostSlug(slug)
+	if err != nil {
+		response.Error(w, http.StatusNotFound, "Kênh phát sóng không tồn tại")
+		return
+	}
+	response.Success(w, http.StatusOK, room)
+}
+
 func (h *RoomHandler) GetMyRooms(w http.ResponseWriter, r *http.Request) {
-	hostID := r.Context().Value("user_id").(uint)
+	hostID := r.Context().Value(middleware.ContextKeyUserID).(uint)
 	rooms, err := h.svc.GetRoomsByHost(hostID)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, err.Error())
@@ -67,7 +82,7 @@ func (h *RoomHandler) GetMyRooms(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *RoomHandler) CreateRoom(w http.ResponseWriter, r *http.Request) {
-	hostID := r.Context().Value("user_id").(uint)
+	hostID := r.Context().Value(middleware.ContextKeyUserID).(uint)
 
 	var req struct {
 		Title       string                `json:"title"`
@@ -98,7 +113,7 @@ func (h *RoomHandler) CreateRoom(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *RoomHandler) GoLive(w http.ResponseWriter, r *http.Request) {
-	hostID := r.Context().Value("user_id").(uint)
+	hostID := r.Context().Value(middleware.ContextKeyUserID).(uint)
 	id, err := parseID(r, "id")
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, "Invalid room ID")
@@ -114,7 +129,7 @@ func (h *RoomHandler) GoLive(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *RoomHandler) EndStream(w http.ResponseWriter, r *http.Request) {
-	hostID := r.Context().Value("user_id").(uint)
+	hostID := r.Context().Value(middleware.ContextKeyUserID).(uint)
 	id, err := parseID(r, "id")
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, "Invalid room ID")
@@ -129,7 +144,7 @@ func (h *RoomHandler) EndStream(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *RoomHandler) UpdateRoom(w http.ResponseWriter, r *http.Request) {
-	hostID := r.Context().Value("user_id").(uint)
+	hostID := r.Context().Value(middleware.ContextKeyUserID).(uint)
 	id, err := parseID(r, "id")
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, "Invalid room ID")
@@ -158,7 +173,7 @@ func (h *RoomHandler) UpdateRoom(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *RoomHandler) DeleteRoom(w http.ResponseWriter, r *http.Request) {
-	hostID := r.Context().Value("user_id").(uint)
+	hostID := r.Context().Value(middleware.ContextKeyUserID).(uint)
 	id, err := parseID(r, "id")
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, "Invalid room ID")
@@ -173,7 +188,7 @@ func (h *RoomHandler) DeleteRoom(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *RoomHandler) GetStreamKey(w http.ResponseWriter, r *http.Request) {
-	hostID := r.Context().Value("user_id").(uint)
+	hostID := r.Context().Value(middleware.ContextKeyUserID).(uint)
 	id, err := parseID(r, "id")
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, "Invalid room ID")

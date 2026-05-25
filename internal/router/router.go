@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"go-stream/internal/config"
+	"go-stream/internal/domain"
 	"go-stream/internal/handler"
 	"go-stream/internal/middleware"
 	"go-stream/pkg/response"
@@ -29,6 +30,8 @@ func SetupRoutes(
 	searchHandler *handler.SearchHandler,
 	categoryHandler *handler.CategoryHandler,
 	tagHandler *handler.TagHandler,
+	authorHandler *handler.AuthorHandler,
+	userRepo domain.UserRepository,
 ) {
 	storagePath := config.GetEnv("STORAGE_PATH", "./storage")
 	mux.Handle("GET /storage/", http.StripPrefix("/storage/", http.FileServer(http.Dir(storagePath))))
@@ -47,6 +50,7 @@ func SetupRoutes(
 
 	mux.HandleFunc("GET /api/users", userHandler.GetUsers)
 	mux.HandleFunc("GET /api/users/{id}", userHandler.GetUserByID)
+	mux.Handle("GET /api/auth/me", auth(userHandler.GetMe))
 
 	mux.HandleFunc("GET /api/search", searchHandler.GlobalSearch)
 
@@ -72,6 +76,7 @@ func SetupRoutes(
 
 	mux.HandleFunc("GET /api/rooms", roomHandler.GetLiveRooms)
 	mux.HandleFunc("GET /api/rooms/{id}", roomHandler.GetRoom)
+	mux.HandleFunc("GET /api/streamers/{slug}", roomHandler.GetRoomBySlug)
 	mux.HandleFunc("GET /api/rooms/{id}/playback", ingestHandler.Playback)
 	mux.Handle("GET /api/rooms/me", auth(roomHandler.GetMyRooms))
 	mux.Handle("GET /api/rooms/{id}/stream-key", auth(roomHandler.GetStreamKey))
@@ -86,4 +91,13 @@ func SetupRoutes(
 
 	mux.Handle("POST /ingest/on-publish", ingestOnly(ingestHandler.OnPublish))
 	mux.Handle("POST /ingest/on-publish-done", ingestOnly(ingestHandler.OnPublishDone))
+
+	// Author & Admin Streamer Approval endpoints
+	admin := func(h http.HandlerFunc) http.Handler {
+		return middleware.AdminOnly(userRepo, h)
+	}
+	mux.Handle("POST /api/authors/apply", auth(authorHandler.Apply))
+	mux.Handle("GET /api/admin/authors", admin(authorHandler.ListCandidates))
+	mux.Handle("PUT /api/admin/authors/{id}/approve", admin(authorHandler.Approve))
+	mux.Handle("PUT /api/admin/authors/{id}/reject", admin(authorHandler.Reject))
 }
