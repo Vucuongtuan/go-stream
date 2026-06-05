@@ -6,6 +6,7 @@ import { MainLayout } from "@/components/layouts";
 import { useAuth } from "@/hooks/useAuth";
 import { apiClient } from "@/lib/api-client";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 
 interface Tag {
   id: number;
@@ -59,12 +60,10 @@ export default function PublicStreamPage() {
   const { slug } = useParams();
   const { user: currentUser, isAuthenticated } = useAuth();
   
-  const [room, setRoom] = useState<Room | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatSending, setChatSending] = useState(false);
+  const [viewerSessionId, setViewerSessionId] = useState<string>("");
 
   const sseRef = useRef<EventSource | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
@@ -127,29 +126,38 @@ export default function PublicStreamPage() {
     };
   }, [room?.playback_url, room?.status]);
 
-  // 1. Fetch Room & User Info by Slug
+  // 1. Fetch Room & User Info by Slug using TanStack Query
+  const { data: room, error: queryError, isLoading: loading } = useQuery<Room>({
+    queryKey: ["room", slug],
+    queryFn: () => apiClient.get<Room>(`/api/streamers/${slug}`),
+    enabled: !!slug,
+    retry: 1,
+  });
+
+  // 1.2 Generate or retrieve viewer session ID
   useEffect(() => {
-    if (!slug) return;
+    let sessionId = sessionStorage.getItem("viewer_session_id");
+    if (!sessionId) {
+      sessionId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2) + Date.now().toString(36);
+      sessionStorage.setItem("viewer_session_id", sessionId);
+    }
+    setViewerSessionId(sessionId);
+  }, []);
 
-    const fetchRoomBySlug = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const roomData = await apiClient.get<Room>(`/api/streamers/${slug}`);
-        if (roomData) {
-          setRoom(roomData);
-        } else {
-          setError("Kênh phát sóng này không tồn tại.");
-        }
-      } catch (err: any) {
-        setError(err.message || "Không thể tải thông tin kênh phát sóng.");
-      } finally {
-        setLoading(false);
-      }
-    };
+  // 1.3 Heartbeat viewer count update via Redis using TanStack Query polling
+  const { data: heartbeatData } = useQuery<{ viewer_count: number }>({
+    queryKey: ["heartbeat", room?.id, viewerSessionId],
+    queryFn: () =>
+      apiClient.post<{ viewer_count: number }>(`/api/rooms/${room?.id}/heartbeat`, {
+        viewer_session_id: viewerSessionId,
+      }),
+    enabled: !!room && room.status === "live" && !!viewerSessionId,
+    refetchInterval: 15000, // Polling every 15 seconds
+    refetchIntervalInBackground: true,
+  });
 
-    fetchRoomBySlug();
-  }, [slug]);
+  const error = queryError ? (queryError as Error).message : null;
+  const activeViewerCount = heartbeatData?.viewer_count ?? room?.viewer_count ?? 0;
 
   // 2. Connect to SSE Chat
   useEffect(() => {
@@ -309,7 +317,7 @@ export default function PublicStreamPage() {
                 </div>
 
                 <div className="absolute top-4 right-4 rounded-full bg-zinc-950/80 backdrop-blur px-3 py-1 text-[10px] font-bold text-zinc-300 border border-white/5">
-                  👁️ {room.viewer_count || 124} người xem
+                  👁️ {activeViewerCount} người xem
                 </div>
               </div>
             ) : (

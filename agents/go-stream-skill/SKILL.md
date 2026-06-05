@@ -1,17 +1,18 @@
 ---
 name: go-stream
 description: >
-  Backend livestreaming foundation skill for Go using net/http stdlib only (NO Gin, Fiber, Echo, or any framework).
+  Livestreaming foundation skill for Go backend and Next.js frontend.
+  Backend uses net/http stdlib only (NO Gin, Fiber, Echo, or any framework). Frontend uses Next.js App Router and Tailwind v4.
   Use this skill whenever the user wants to: build a live streaming backend in Go, implement HLS streaming,
   set up SSE-based realtime chat, add JWT auth in Go, design Clean Architecture for a Go HTTP server,
-  implement RTMP ingest hooks, wire repository/service/handler layers, or add any feature to a Go-Stream-style project.
+  implement RTMP ingest hooks, build frontend UI in Next.js, or add any feature to the Go-Stream project.
   Trigger on keywords: Go livestream, HLS backend, net/http server, Go SSE chat, Go Clean Architecture,
-  RTMP ingest Go, Go JWT auth, GORM SQLite, Go streaming backend.
+  RTMP ingest Go, Go JWT auth, GORM SQLite, Go streaming backend, Next.js frontend, Tailwind v4.
 ---
 
 # Go-Stream Skill
 
-Backend livestreaming platform built in pure Go (`net/http`), following Clean Architecture.
+Full-stack livestreaming platform built with pure Go (`net/http`) backend following Clean Architecture, and Next.js 16 App Router + Tailwind CSS v4 frontend.
 Supports HLS livestream, SSE realtime chat, short-form video, author/creator system, and global search.
 
 ## Tech Stack
@@ -293,7 +294,7 @@ searchHandler := handler.NewSearchHandler(searchSvc)
 
 ---
 
-## Absolute Rules
+## Backend Absolute Rules
 
 1. **No HTTP framework** — only `net/http` stdlib
 2. **No code comments** — code must be self-explanatory
@@ -305,6 +306,49 @@ searchHandler := handler.NewSearchHandler(searchSvc)
 8. **Sensitive fields** — use `json:"-"` to hide (passwords, tokens, stream keys)
 9. **Path params** — use `r.PathValue("key")` (Go 1.22+)
 10. **Query params** — use `r.URL.Query().Get("key")`
+
+---
+
+## Frontend Architecture & Rules (fe/)
+
+### Tech Stack
+- **Framework**: Next.js 16 (App Router)
+- **Library**: React 19
+- **Styling**: Tailwind CSS v4 (using CSS-based configuration via `@import "tailwindcss";` in `globals.css`)
+- **Language**: TypeScript (Strict typing, no `any`)
+- **Package Manager**: `pnpm` (Workspace-ready)
+
+### Directory Structure Conventions (`fe/src`)
+
+All frontend source code must reside inside `fe/src/` and strictly adhere to the following 6 directories:
+
+- **`app/`**: Next.js pages, layouts, routing, metadata, and CSS imports. Keep business logic and component state minimal here.
+- **`components/`**: Reusable UI components, strictly categorized as:
+  - `ui/`: Reusable, atomic, low-level UI elements (e.g., `Button.tsx`, `Input.tsx`, `Modal.tsx`, `Card.tsx`).
+  - `common/`: Layout shell components shared across the application (e.g., `Navbar.tsx`, `Sidebar.tsx`, `Footer.tsx`).
+  - `features/{featureName}/`: Feature-specific UI components (e.g., `features/chat/ChatBox.tsx`, `features/stream/VideoPlayer.tsx`).
+- **`hooks/`**: Custom React Hooks for encapsulating local/global state, side effects, API fetch coordination, and SSE connections (e.g., `useAuth.ts`, `useChat.ts`, `useStream.ts`).
+- **`lib/`**: Integration and wrapper code for external libraries (e.g., API clients, local storage wrapper, global constants).
+- **`services/`**: API service layer mapping to the backend (e.g., `auth.service.ts`, `room.service.ts`, `chat.service.ts`). Each service is a stateless module that performs HTTP requests.
+- **`utils/`**: Pure utility functions without side-effects (e.g., `formatDate.ts`, `validators.ts`, `stringUtils.ts`).
+
+### Frontend Absolute Rules
+
+1. **Strict Separation of Concerns**: Components are for presentation and event delegation. Business logic, state manipulation, and fetching should live in services or custom hooks.
+2. **TypeScript Integrity**: No `any` type. Define clear interfaces/types for all data models (which should align with the backend's response model `pkg/response`).
+3. **Tailwind v4 Conventions**: Use standard utility classes. Maintain absolute responsiveness (`sm:`, `md:`, `lg:`). Custom values or colors must be defined in `@theme` in `globals.css` if global, otherwise use arbitrary values sparingly.
+4. **File Naming Conventions**:
+   - Components & Layouts: PascalCase (e.g., `ChatBox.tsx`, `Navbar.tsx`).
+   - Hooks: camelCase with `use` prefix (e.g., `useAuth.ts`, `useChat.ts`).
+   - Services & Utils: camelCase/kebab-case (e.g., `auth.service.ts`, `api-client.ts`).
+   - Folders: camelCase or kebab-case.
+5. **API Communications**:
+   - Utilize a unified API client configured in `src/lib/api-client.ts`.
+   - Respect backend response standard (all APIs return `{ status: boolean, statusCode: number, data?: any, message?: string }`).
+6. **Realtime & Streaming Hooks**:
+   - SSE connection for chat must handle connections, retry logic, and clean up listeners properly on unmount inside `useChat.ts`.
+   - Streaming must use proper player libraries (like `hls.js` or generic wrappers) and handle fallback gracefully.
+7. **No Messy or Ad-hoc files**: Never place generic files in the root of `src/` or `src/app/`. All code must belong to one of the designated 6 directories inside `src/`.
 
 ---
 

@@ -1,6 +1,8 @@
-version: '3.8'
-
 services:
+  # ============================================================
+  # INFRASTRUCTURE
+  # ============================================================
+
   db:
     image: postgres:15-alpine
     container_name: gostream_db
@@ -19,14 +21,84 @@ services:
       timeout: 5s
       retries: 5
 
-  app:
+  redis:
+    image: redis:7-alpine
+    container_name: gostream_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --save 60 1 --loglevel warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: gostream_zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: gostream_kafka
+    restart: unless-stopped
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.1
+    container_name: gostream_kafka_ui
+    restart: unless-stopped
+    depends_on:
+      - kafka
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: gostream-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+
+  # ============================================================
+  # SERVICES
+  # ============================================================
+
+  # 🔵 Main API Service (Go)
+  main-api:
     build:
-      context: .
+      context: ./services/main-api
       dockerfile: Dockerfile
-    container_name: gostream_app
+    container_name: gostream_main_api
     restart: unless-stopped
     depends_on:
       db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
         condition: service_healthy
     environment:
       DATABASE_URL: "host=db user=${POSTGRES_USER:-gostream} password=${POSTGRES_PASSWORD:-8xKf9Pq2LmNw7ZaR} dbname=${POSTGRES_DB:-gostream} port=5432 sslmode=disable TimeZone=Asia/Ho_Chi_Minh"
@@ -35,15 +107,51 @@ services:
       STORAGE_BASE_URL: "http://localhost/storage"
       JWT_SECRET: ${JWT_SECRET:-Y3mQpL8vN2xKf7RtB4sHj9WcUaE5Dz}
       INGEST_SERVER_IP: "127.0.0.1"
+      REDIS_HOST: "redis"
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
+      KAFKA_BROKERS: "kafka:29092"
     volumes:
       - ./storage:/app/storage
+
+  # 🟢 Chat Service (NestJS)
+  chat-service:
+    build:
+      context: ./services/chat-service
+      dockerfile: Dockerfile
+    container_name: gostream_chat
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      PORT: "3001"
+      KAFKA_BROKERS: "kafka:29092"
+
+  # 🟠 Notification Service (Go)
+  notification-service:
+    build:
+      context: ./services/notification-service
+      dockerfile: Dockerfile
+    container_name: gostream_notification
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKERS: "kafka:29092"
+
+  # ============================================================
+  # REVERSE PROXY & RTMP
+  # ============================================================
 
   nginx:
     image: tiangolo/nginx-rtmp
     container_name: gostream_proxy
     restart: unless-stopped
     depends_on:
-      - app
+      - main-api
+      - chat-service
     ports:
       - "80:80"
       - "1935:1935"
@@ -53,3 +161,6 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:
+  zookeeper_data:
+  kafka_data:
