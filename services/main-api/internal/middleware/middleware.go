@@ -129,3 +129,16 @@ func AdminOnly(userRepo domain.UserRepository, next http.HandlerFunc) http.Handl
 		next.ServeHTTP(w, r)
 	})
 }
+
+// GetUserIDFromContext retrieves the user ID injected by Auth middleware.
+func GetUserIDFromContext(ctx context.Context) (uint, error) {
+	val := ctx.Value(ContextKeyUserID)
+	if val == nil {
+		return 0, http.ErrNoLocation // generic error
+	}
+	userID, ok := val.(uint)
+	if !ok {
+		return 0, http.ErrNoLocation
+	}
+	return userID, nil
+}

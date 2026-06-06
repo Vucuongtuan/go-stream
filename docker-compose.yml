@@ -141,6 +141,25 @@ services:
     environment:
       KAFKA_BROKERS: "kafka:29092"
 
+  # 📈 Analytics Service (Go)
+  analytics-service:
+    build:
+      context: ./services/analytics-service
+      dockerfile: Dockerfile
+    container_name: gostream_analytics
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      PORT: "3003"
+      REDIS_HOST: "redis"
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
+      KAFKA_BROKERS: "kafka:29092"
+
   # ============================================================
   # REVERSE PROXY & RTMP
   # ============================================================
@@ -152,6 +171,7 @@ services:
     depends_on:
       - main-api
       - chat-service
+      - analytics-service
     ports:
       - "80:80"
       - "1935:1935"

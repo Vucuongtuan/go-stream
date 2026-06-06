@@ -38,14 +38,17 @@ func main() {
 	roomRepo := repository.NewRoomRepository(db)
 	categoryRepo := repository.NewCategoryRepository(db)
 	authorRepo := repository.NewAuthorRepository(db)
+	walletRepo := repository.NewWalletRepository(db)
+	donationRepo := repository.NewDonationRepository(db)
 
 	userSvc := service.NewUserService(userRepo)
-	authSvc := service.NewAuthService(userRepo, identityRepo)
+	authSvc := service.NewAuthService(userRepo, identityRepo, walletRepo)
 	tagSvc := service.NewTagService(tagRepo)
 	roomSvc := service.NewRoomService(roomRepo, tagRepo, redisClient)
 	categorySvc := service.NewCategoryService(categoryRepo)
 	searchSvc := service.NewSearchService(db)
 	authorSvc := service.NewAuthorService(authorRepo)
+	donationSvc := service.NewDonationService(db, walletRepo, donationRepo, redisClient, kafkaProducer)
 
 	chatHub := chat.NewHub()
 
@@ -58,10 +61,11 @@ func main() {
 	categoryHandler := handler.NewCategoryHandler(categorySvc)
 	tagHandler := handler.NewTagHandler(tagSvc)
 	authorHandler := handler.NewAuthorHandler(authorSvc, authorRepo)
+	donationHandler := handler.NewDonationHandler(donationSvc)
 
 	// Config router
 	mux := http.NewServeMux()
-	router.SetupRoutes(mux, userHandler, authHandler, roomHandler, chatHandler, ingestHandler, searchHandler, categoryHandler, tagHandler, authorHandler, userRepo)
+	router.SetupRoutes(mux, userHandler, authHandler, roomHandler, chatHandler, ingestHandler, searchHandler, categoryHandler, tagHandler, authorHandler, donationHandler, userRepo)
 
 	// Port
 	port := config.GetEnv("PORT", "8080")
@@ -70,7 +74,7 @@ func main() {
 	// Middleware
 	server := &http.Server{
 		Addr:    ":" + port,
-		Handler: loggerMiddleware(corsMiddleware(mux)),
+		Handler: loggerMiddleware(mux),
 	}
 
 	// Running server
@@ -85,17 +89,16 @@ func loggerMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
-
 // corsMiddleware sets basic CORS headers for all responses
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
+// func corsMiddleware(next http.Handler) http.Handler {
+// 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// 		w.Header().Set("Access-Control-Allow-Origin", "*")
+// 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+// 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+// 		if r.Method == "OPTIONS" {
+// 			w.WriteHeader(http.StatusOK)
+// 			return
+// 		}
+// 		next.ServeHTTP(w, r)
+// 	})
+// }

@@ -1,7 +1,7 @@
 go 1.26.3
 
 use (
-	.
+	./services/analytics-service
 	./services/main-api
 	./services/notification-service
 )

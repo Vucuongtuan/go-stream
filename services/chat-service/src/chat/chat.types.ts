@@ -7,6 +7,8 @@ export interface ChatMessage {
   content: string;
   type: 'text' | 'gift' | 'system';
   created_at: string;
+  gift_type?: number;
+  coin?: number;
 }
 
 export interface SendMessageDto {

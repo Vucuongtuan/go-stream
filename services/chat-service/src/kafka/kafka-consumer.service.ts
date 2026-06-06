@@ -16,21 +16,46 @@ export class KafkaConsumerService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     await this.consumer.connect();
+    // Subscribe to multiple topics
     await this.consumer.subscribe({ topic: 'stream-events', fromBeginning: false });
+    await this.consumer.subscribe({ topic: 'chat-events', fromBeginning: false });
 
     await this.consumer.run({
       eachMessage: async ({ topic, message }) => {
         try {
           const event = JSON.parse(message.value?.toString() || '{}');
-          console.log(`📨 Received event: ${event.event_type}`);
+          console.log(`📨 Received event: ${event.event_type} on topic: ${topic}`);
 
-          switch (event.event_type) {
-            case 'stream.ended':
-              this.chatService.cleanupRoom(event.payload?.room_id);
-              break;
-            case 'stream.started':
-              console.log(`🎬 Stream started for room ${event.payload?.room_id}`);
-              break;
+          if (topic === 'stream-events') {
+            switch (event.event_type) {
+              case 'stream.ended':
+                this.chatService.cleanupRoom(event.payload?.room_id);
+                break;
+              case 'stream.started':
+                console.log(`🎬 Stream started for room ${event.payload?.room_id}`);
+                break;
+            }
+          } else if (topic === 'chat-events') {
+            switch (event.event_type) {
+              case 'chat.message':
+                // Check if it is a donation/gift type or standard chat
+                if (event.payload) {
+                  this.chatService.publish(event.payload.room_id, {
+                    id: event.payload.id,
+                    room_id: event.payload.room_id,
+                    user_id: event.payload.user_id,
+                    user_name: event.payload.user_name,
+                    avatar: event.payload.avatar,
+                    content: event.payload.content,
+                    type: event.payload.type,
+                    created_at: event.payload.created_at,
+                    gift_type: event.payload.gift_type,
+                    coin: event.payload.coin,
+                  });
+                  console.log(`🎁 Gift/Chat broadcasted to room ${event.payload.room_id} from user ${event.payload.user_name}`);
+                }
+                break;
+            }
           }
         } catch (error) {
           console.error('❌ Error processing Kafka message:', error);
@@ -38,6 +63,6 @@ export class KafkaConsumerService implements OnModuleInit {
       },
     });
 
-    console.log('📥 Kafka consumer subscribed to stream-events');
+    console.log('📥 Kafka consumer subscribed to stream-events and chat-events');
   }
 }

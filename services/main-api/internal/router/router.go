@@ -31,6 +31,7 @@ func SetupRoutes(
 	categoryHandler *handler.CategoryHandler,
 	tagHandler *handler.TagHandler,
 	authorHandler *handler.AuthorHandler,
+	donationHandler *handler.DonationHandler,
 	userRepo domain.UserRepository,
 ) {
 	storagePath := config.GetEnv("STORAGE_PATH", "./storage")
@@ -56,6 +57,11 @@ func SetupRoutes(
 
 	mux.HandleFunc("POST /api/auth/register", authHandler.Register)
 	mux.HandleFunc("POST /api/auth/login", authHandler.Login)
+
+	// Wallet & Donation routes
+	mux.Handle("GET /api/wallet/balance", auth(donationHandler.GetWallet))
+	mux.Handle("POST /api/wallet/check-in", auth(donationHandler.CheckIn))
+	mux.Handle("POST /api/rooms/{roomId}/donate", auth(donationHandler.Donate))
 
 	mux.HandleFunc("GET /api/categories", categoryHandler.GetAllCategories)
 	mux.HandleFunc("GET /api/categories/{id}", categoryHandler.GetCategoryByID)

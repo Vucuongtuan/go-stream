@@ -1,7 +1,9 @@
 package service
 
 import (
+	"context"
 	"errors"
+	"log/slog"
 	"time"
 
 	"go-stream/services/main-api/internal/domain"
@@ -15,12 +17,18 @@ import (
 type authService struct {
 	userRepo     domain.UserRepository
 	identityRepo domain.IdentityRepository
+	walletRepo   domain.WalletRepository
 }
 
-func NewAuthService(userRepo domain.UserRepository, identityRepo domain.IdentityRepository) domain.AuthService {
+func NewAuthService(
+	userRepo domain.UserRepository,
+	identityRepo domain.IdentityRepository,
+	walletRepo domain.WalletRepository,
+) domain.AuthService {
 	return &authService{
 		userRepo:     userRepo,
 		identityRepo: identityRepo,
+		walletRepo:   walletRepo,
 	}
 }
 
@@ -56,6 +64,17 @@ func (s *authService) Register(name, email, password string) (*domain.User, erro
 	}
 	if err := s.identityRepo.Create(identity); err != nil {
 		return nil, err
+	}
+
+	// Auto-create Wallet for new user with 100 free coins (IsActive set to false by default)
+	wallet := &domain.Wallet{
+		UserID:   user.ID,
+		Balance:  100,
+		IsActive: false,
+	}
+	if err := s.walletRepo.Create(context.Background(), wallet); err != nil {
+		// Just log error but do not fail registration
+		slog.Error("Failed to auto-create wallet for registered user", "user_id", user.ID, "err", err)
 	}
 
 	return user, nil
