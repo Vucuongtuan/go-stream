@@ -1,4 +1,4 @@
-import { getCookie } from "@/utils/cookie";
+import { useAuthStore } from "@/store/authStore";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:80";
 
@@ -31,11 +31,12 @@ async function request<T>(
     headers.set("Content-Type", "application/json");
   }
 
-  // Inject token from cookie if it exists
-  const token = getCookie("access_token");
+  // Inject token from Zustand store (RAM) if it exists
+  const token = useAuthStore.getState().accessToken;
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
   }
+
 
   const config: RequestInit = {
     ...options,
@@ -43,7 +44,19 @@ async function request<T>(
   };
 
   try {
-    const response = await fetch(url, config);
+    let response = await fetch(url, config);
+    
+    // Auto-recovery: If request returns 401 Unauthorized and we have a cookie session token, update the RAM store
+    if (response.status === 401) {
+      const { getCookie } = await import("@/utils/cookie");
+      const cookieToken = getCookie("refresh_token");
+      if (cookieToken && cookieToken !== token) {
+        useAuthStore.getState().setAccessToken(cookieToken);
+        headers.set("Authorization", `Bearer ${cookieToken}`);
+        response = await fetch(url, config);
+      }
+    }
+
     const text = await response.text();
     let result: ApiResponse<T>;
 
@@ -54,6 +67,13 @@ async function request<T>(
     }
 
     if (!response.ok || !result.status) {
+      // Auto-clear auth state on actual expired credentials
+      if (response.status === 401) {
+        useAuthStore.getState().clearAuth();
+        const { deleteCookie } = await import("@/utils/cookie");
+        deleteCookie("refresh_token");
+        deleteCookie("user_session");
+      }
       const errorMessage = result.message || `HTTP error! status: ${response.status}`;
       throw new ApiError(errorMessage, result.statusCode || response.status);
     }

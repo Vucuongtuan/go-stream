@@ -48,12 +48,22 @@ func main() {
 
 	// 4. Set up architecture components
 	analyticsRepo := repository.NewRedisAnalyticsRepository(rdb)
-	analyticsHandler := handler.NewAnalyticsHandler(analyticsRepo)
+	leaderboardRepo := repository.NewRedisLeaderboardRepository(rdb)
+	roomStatsRepo := repository.NewRedisRoomStatsRepository(rdb)
+
+	analyticsHandler := handler.NewAnalyticsHandler(analyticsRepo, leaderboardRepo, roomStatsRepo)
 
 	// 5. Initialize and run HTTP server using native net/http multiplexer
 	mux := http.NewServeMux()
-	// Using Go 1.22+ wildcard path routing
+
+	// --- Room real-time stats ---
 	mux.HandleFunc("GET /api/analytics/rooms/{roomId}", analyticsHandler.GetRoomStats)
+	mux.HandleFunc("GET /api/analytics/rooms/{roomId}/donors", analyticsHandler.GetRoomTopDonors)
+	mux.HandleFunc("GET /api/analytics/rooms/{roomId}/chatters", analyticsHandler.GetRoomTopChatters)
+
+	// --- Global leaderboards ---
+	mux.HandleFunc("GET /api/analytics/leaderboard/streamers", analyticsHandler.GetLeaderboard)
+	mux.HandleFunc("GET /api/analytics/leaderboard/streamers/{streamerId}", analyticsHandler.GetStreamerRank)
 
 	server := &http.Server{
 		Addr:         ":" + port,
@@ -63,8 +73,16 @@ func main() {
 	}
 
 	// 6. Initialize Kafka Consumer
-	topics := []string{"stream-events", "chat-events"}
-	kafkaConsumer := consumer.NewServiceConsumer(kafkaBrokers, "analytics-service-group", topics, analyticsRepo)
+	// Subscribe to stream-events, chat-events, and the new donation-events topic
+	topics := []string{"stream-events", "chat-events", "donation-events"}
+	kafkaConsumer := consumer.NewServiceConsumer(
+		kafkaBrokers,
+		"analytics-service-group",
+		topics,
+		analyticsRepo,
+		leaderboardRepo,
+		roomStatsRepo,
+	)
 
 	// Application runtime context
 	appCtx, appCancel := context.WithCancel(context.Background())
@@ -93,7 +111,7 @@ func main() {
 	<-sigChan
 
 	slog.Info("🛑 Shutting down Analytics Service gracefully...")
-	
+
 	// Terminate background contexts
 	appCancel()
 	kafkaConsumer.Close()

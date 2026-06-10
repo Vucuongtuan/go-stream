@@ -6,20 +6,34 @@ import {
   Body,
   Res,
   HttpStatus,
-  ParseIntPipe,
+  Inject,
+  OnModuleInit,
 } from '@nestjs/common';
+import { ClientGrpc } from '@nestjs/microservices';
 import { FastifyReply } from 'fastify';
 import { v4 as uuidv4 } from 'uuid';
+import { Observable, lastValueFrom } from 'rxjs';
 import { ChatService } from './chat.service';
 import { KafkaProducerService } from '../kafka/kafka-producer.service';
 import { SendMessageDto, ChatMessage } from './chat.types';
 
+interface ModerationGrpcService {
+  isUserMuted(data: { roomId: number; userId: number }): Observable<{ isMuted: boolean; reason: string }>;
+}
+
 @Controller('api/rooms/:roomId/chat')
-export class ChatController {
+export class ChatController implements OnModuleInit {
+  private moderationService: ModerationGrpcService;
+
   constructor(
     private readonly chatService: ChatService,
     private readonly kafkaProducer: KafkaProducerService,
+    @Inject('MODERATION_PACKAGE') private readonly client: ClientGrpc,
   ) {}
+
+  onModuleInit() {
+    this.moderationService = this.client.getService<ModerationGrpcService>('ModerationService');
+  }
 
   /**
    * SSE endpoint — client subscribes to receive real-time chat messages
@@ -79,6 +93,23 @@ export class ChatController {
         message: 'Content is required',
       });
       return;
+    }
+
+    // Check if user is banned or timed out in main-api via gRPC
+    try {
+      const response = await lastValueFrom(
+        this.moderationService.isUserMuted({ roomId, userId: dto.user_id })
+      );
+      if (response && response.isMuted) {
+        res.status(HttpStatus.FORBIDDEN).send({
+          status: false,
+          statusCode: 403,
+          message: response.reason || 'You are muted or banned from this chat room',
+        });
+        return;
+      }
+    } catch (e) {
+      console.error('Failed to check mute status via gRPC:', e);
     }
 
     const message: ChatMessage = {

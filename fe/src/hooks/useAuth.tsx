@@ -5,6 +5,7 @@ import { User, LoginInput, RegisterInput } from "@/lib/types";
 import { authService } from "@/services/auth.service";
 import { apiClient } from "@/lib/api-client";
 import { getCookie, setCookie, deleteCookie } from "@/utils/cookie";
+import { useAuthStore } from "@/store/authStore";
 
 interface AuthContextType {
   user: User | null;
@@ -20,7 +21,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const { user, accessToken, setAccessToken, setUser, clearAuth } = useAuthStore();
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,10 +29,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const checkSession = async () => {
       try {
         const savedSession = getCookie("user_session");
-        const token = getCookie("access_token");
+        const refreshToken = getCookie("refresh_token");
         
-        if (token) {
+        if (refreshToken) {
           try {
+            // Temporarily load refresh token into RAM for checking session via /api/auth/me
+            setAccessToken(refreshToken);
             const data = await apiClient.get<User>("/api/auth/me");
             if (data) {
               setUser(data);
@@ -40,6 +43,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
           } catch (err) {
             console.error("Lỗi đồng bộ session qua API:", err);
+            // If API call fails, clear RAM auth state
+            clearAuth();
           }
         }
         
@@ -48,23 +53,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       } catch {
         deleteCookie("user_session");
-        deleteCookie("access_token");
+        deleteCookie("refresh_token");
+        clearAuth();
       } finally {
         setIsLoading(false);
       }
     };
     checkSession();
-  }, []);
+  }, [setAccessToken, setUser, clearAuth]);
 
   const login = async (input: LoginInput) => {
     setIsLoading(true);
     setError(null);
     try {
       const response = await authService.login(input);
+      
+      // Store access token in Zustand RAM store
+      setAccessToken(response.access_token);
       setUser(response.user);
       
-      // Store credentials in cookies for 7 days
-      setCookie("access_token", response.access_token, 7);
+      // Store credentials in cookies: refresh_token and user_session
+      setCookie("refresh_token", response.access_token, 7);
       setCookie("user_session", JSON.stringify(response.user), 7);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Đã xảy ra lỗi đăng nhập";
@@ -80,8 +89,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setError(null);
     try {
       const userResult = await authService.register(input);
-      // Since backend register does not return a token, we return the user
-      // and let the client call login next or redirect to login.
       return userResult;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Đã xảy ra lỗi đăng ký tài khoản";
@@ -93,8 +100,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = () => {
-    setUser(null);
-    deleteCookie("access_token");
+    clearAuth();
+    deleteCookie("refresh_token");
     deleteCookie("user_session");
   };
 

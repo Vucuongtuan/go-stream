@@ -12,6 +12,7 @@ import (
 	"go-stream/services/main-api/internal/service"
 	"go-stream/services/main-api/pkg/chat"
 	"go-stream/services/main-api/pkg/logger"
+	internalgrpc "go-stream/services/main-api/internal/grpc"
 )
 
 func main() {
@@ -40,6 +41,9 @@ func main() {
 	authorRepo := repository.NewAuthorRepository(db)
 	walletRepo := repository.NewWalletRepository(db)
 	donationRepo := repository.NewDonationRepository(db)
+	predictionRepo := repository.NewPredictionRepository(db)
+	pollRepo := repository.NewPollRepository(db)
+	moderationRepo := repository.NewModerationRepository(db)
 
 	userSvc := service.NewUserService(userRepo)
 	authSvc := service.NewAuthService(userRepo, identityRepo, walletRepo)
@@ -49,6 +53,9 @@ func main() {
 	searchSvc := service.NewSearchService(db)
 	authorSvc := service.NewAuthorService(authorRepo)
 	donationSvc := service.NewDonationService(db, walletRepo, donationRepo, redisClient, kafkaProducer)
+	predictionSvc := service.NewPredictionService(db, predictionRepo, walletRepo, kafkaProducer)
+	pollSvc := service.NewPollService(db, pollRepo, moderationRepo, kafkaProducer)
+	moderationSvc := service.NewModerationService(db, moderationRepo, userRepo, kafkaProducer)
 
 	chatHub := chat.NewHub()
 
@@ -62,13 +69,23 @@ func main() {
 	tagHandler := handler.NewTagHandler(tagSvc)
 	authorHandler := handler.NewAuthorHandler(authorSvc, authorRepo)
 	donationHandler := handler.NewDonationHandler(donationSvc)
+	predictionHandler := handler.NewPredictionHandler(predictionSvc)
+	pollHandler := handler.NewPollHandler(pollSvc)
+	moderationHandler := handler.NewModerationHandler(moderationSvc)
 
 	// Config router
 	mux := http.NewServeMux()
-	router.SetupRoutes(mux, userHandler, authHandler, roomHandler, chatHandler, ingestHandler, searchHandler, categoryHandler, tagHandler, authorHandler, donationHandler, userRepo)
+	router.SetupRoutes(mux, userHandler, authHandler, roomHandler, chatHandler, ingestHandler, searchHandler, categoryHandler, tagHandler, authorHandler, donationHandler, predictionHandler, pollHandler, moderationHandler, userRepo)
 
 	// Port
 	port := config.GetEnv("PORT", "8080")
+	grpcPort := config.GetEnv("GRPC_PORT", "50051")
+
+	// Start gRPC Server
+	grpcServer, err := internalgrpc.StartGrpcServer(grpcPort, moderationSvc)
+	logger.FatalIfError(err, "Failed to start gRPC server")
+	defer grpcServer.GracefulStop()
+
 	logger.Info("Server starting", "port", port)
 
 	// Middleware
@@ -78,7 +95,7 @@ func main() {
 	}
 
 	// Running server
-	err := server.ListenAndServe()
+	err = server.ListenAndServe()
 	logger.FatalIfError(err, "Failed to start server")
 }
 

@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package moderation;
+
+option go_package = "go-stream/services/main-api/internal/grpc/moderation;moderation";
+
+service ModerationService {
+  rpc IsUserMuted (MuteStatusRequest) returns (MuteStatusResponse);
+}
+
+message MuteStatusRequest {
+  uint32 room_id = 1;
+  uint32 user_id = 2;
+}
+
+message MuteStatusResponse {
+  bool is_muted = 1;
+  string reason = 2;
+}

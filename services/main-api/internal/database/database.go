@@ -37,6 +37,14 @@ func ConnectDB() *gorm.DB {
 		&domain.ShortVideoTag{},
 		&domain.Wallet{},
 		&domain.Donation{},
+		&domain.Prediction{},
+		&domain.PredictionOption{},
+		&domain.PredictionBet{},
+		&domain.RoomModerator{},
+		&domain.ModerationLog{},
+		&domain.Poll{},
+		&domain.PollOption{},
+		&domain.PollVote{},
 	)
 	logger.FatalIfError(err, "Failed to run database migration")
 
