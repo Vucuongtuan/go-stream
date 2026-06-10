@@ -30,6 +30,14 @@ func (r *userRepository) FindByID(id uint) (*domain.User, error) {
 	return &user, nil
 }
 
+func (r *userRepository) FindByEmail(email string) (*domain.User, error) {
+	var user domain.User
+	if result := r.db.Where("email = ?", email).First(&user); result.Error != nil {
+		return nil, result.Error
+	}
+	return &user, nil
+}
+
 func (r *userRepository) Create(user *domain.User) error {
 	return r.db.Create(user).Error
 }

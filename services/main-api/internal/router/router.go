@@ -32,6 +32,9 @@ func SetupRoutes(
 	tagHandler *handler.TagHandler,
 	authorHandler *handler.AuthorHandler,
 	donationHandler *handler.DonationHandler,
+	predictionHandler *handler.PredictionHandler,
+	pollHandler *handler.PollHandler,
+	moderationHandler *handler.ModerationHandler,
 	userRepo domain.UserRepository,
 ) {
 	storagePath := config.GetEnv("STORAGE_PATH", "./storage")
@@ -62,6 +65,28 @@ func SetupRoutes(
 	mux.Handle("GET /api/wallet/balance", auth(donationHandler.GetWallet))
 	mux.Handle("POST /api/wallet/check-in", auth(donationHandler.CheckIn))
 	mux.Handle("POST /api/rooms/{roomId}/donate", auth(donationHandler.Donate))
+
+	// Prediction routes
+	mux.Handle("POST /api/rooms/{roomId}/predictions", auth(predictionHandler.CreatePrediction))
+	mux.Handle("POST /api/predictions/{id}/lock", auth(predictionHandler.LockPrediction))
+	mux.Handle("POST /api/predictions/{id}/resolve", auth(predictionHandler.ResolvePrediction))
+	mux.Handle("POST /api/predictions/{id}/cancel", auth(predictionHandler.CancelPrediction))
+	mux.Handle("POST /api/predictions/{id}/bet", auth(predictionHandler.PlaceBet))
+	mux.HandleFunc("GET /api/rooms/{roomId}/predictions/active", predictionHandler.GetActivePrediction)
+
+	// Poll routes
+	mux.Handle("POST /api/rooms/{roomId}/polls", auth(pollHandler.CreatePoll))
+	mux.Handle("POST /api/polls/{id}/end", auth(pollHandler.EndPoll))
+	mux.Handle("POST /api/polls/{id}/vote", auth(pollHandler.Vote))
+	mux.HandleFunc("GET /api/rooms/{roomId}/polls/active", pollHandler.GetActivePoll)
+
+	// Moderation routes
+	mux.Handle("POST /api/rooms/{roomId}/moderators", auth(moderationHandler.AddModerator))
+	mux.Handle("DELETE /api/rooms/{roomId}/moderators", auth(moderationHandler.RemoveModerator))
+	mux.Handle("POST /api/rooms/{roomId}/ban", auth(moderationHandler.BanUser))
+	mux.Handle("DELETE /api/rooms/{roomId}/ban/{id}", auth(moderationHandler.UnbanUser))
+	mux.Handle("POST /api/rooms/{roomId}/timeout", auth(moderationHandler.TimeoutUser))
+	mux.HandleFunc("GET /api/rooms/{roomId}/users/{userId}/mute-status", moderationHandler.CheckMuteStatus)
 
 	mux.HandleFunc("GET /api/categories", categoryHandler.GetAllCategories)
 	mux.HandleFunc("GET /api/categories/{id}", categoryHandler.GetCategoryByID)

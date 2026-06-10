@@ -4,10 +4,13 @@ import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
+import { useAuthStore } from "@/store/authStore";
+import { Button } from "@/components/ui";
 
 export function AuthWidget() {
   const router = useRouter();
   const { user, isAuthenticated, logout } = useAuth();
+  const { openAuthModal } = useAuthStore();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
 
@@ -39,7 +42,7 @@ export function AuthWidget() {
           
           {/* Member badge & greetings (Tablet & Desktop) */}
           <div className="hidden flex-col text-right md:flex select-none">
-            <span className="text-sm font-semibold text-white">
+            <span className="text-sm font-semibold text-zinc-850 dark:text-white">
               {user.name}
             </span>
             <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
@@ -50,7 +53,7 @@ export function AuthWidget() {
           {/* Interactive Glowing Avatar button */}
           <button
             onClick={() => setIsOpen((prev) => !prev)}
-            className="relative h-10 w-10 rounded-full ring-2 ring-emerald-500/20 hover:ring-emerald-500/50 overflow-hidden bg-zinc-800 flex items-center justify-center text-emerald-400 font-extrabold border border-zinc-700 uppercase cursor-pointer transition-all duration-300 shadow-lg shadow-emerald-500/5 hover:scale-105 active:scale-95"
+            className="relative h-10 w-10 rounded-full ring-2 ring-emerald-500/20 hover:ring-emerald-500/50 overflow-hidden bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-emerald-600 dark:text-emerald-400 font-extrabold border border-zinc-200 dark:border-zinc-700 uppercase cursor-pointer transition-all duration-300 shadow-lg shadow-emerald-500/5 hover:scale-105 active:scale-95"
             title="Tùy chọn tài khoản"
           >
             {user.name ? user.name.charAt(0) : "U"}
@@ -60,11 +63,11 @@ export function AuthWidget() {
 
           {/* PREMIUM FLOATING DROPDOWN MENU */}
           {isOpen && (
-            <div className="absolute right-0 top-14 z-50 w-64 rounded-2xl border border-white/5 bg-zinc-950/95 backdrop-blur-2xl p-2 shadow-2xl shadow-emerald-950/10 animate-in fade-in slide-in-from-top-3 duration-200">
+            <div className="absolute right-0 top-14 z-50 w-64 rounded-2xl border border-zinc-200 bg-white/95 dark:border-white/5 dark:bg-zinc-950/95 backdrop-blur-2xl p-2 shadow-2xl shadow-emerald-950/10 animate-in fade-in slide-in-from-top-3 duration-200">
               
               {/* Dropdown Header: User profile info */}
-              <div className="px-3.5 py-3 border-b border-zinc-900 text-left select-none space-y-1">
-                <p className="text-xs font-bold text-white truncate">{user.name}</p>
+              <div className="px-3.5 py-3 border-b border-zinc-100 dark:border-zinc-900 text-left select-none space-y-1">
+                <p className="text-xs font-bold text-zinc-900 dark:text-white truncate">{user.name}</p>
                 {user.email && (
                   <p className="text-[10px] text-zinc-500 truncate">{user.email}</p>
                 )}
@@ -84,14 +87,14 @@ export function AuthWidget() {
               </div>
 
               {/* Dropdown Menu Options */}
-              <div className="py-1.5 space-y-0.5 text-left text-xs font-medium text-zinc-300">
+              <div className="py-1.5 space-y-0.5 text-left text-xs font-medium text-zinc-650 dark:text-zinc-300">
                 
                 {/* 1. Admin Links */}
                 {user.role === "admin" && (
                   <Link
                     href="/admin"
                     onClick={() => setIsOpen(false)}
-                    className="flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 hover:bg-zinc-900 hover:text-white transition-all cursor-pointer"
+                    className="flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 hover:bg-zinc-100 dark:hover:bg-zinc-900 hover:text-zinc-900 dark:hover:text-white transition-all cursor-pointer"
                   >
                     <span>⚙️</span>
                     <span>Quản lý hệ thống (Admin)</span>
@@ -104,7 +107,7 @@ export function AuthWidget() {
                     <Link
                       href="/streamer"
                       onClick={() => setIsOpen(false)}
-                      className="flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 hover:bg-zinc-900 hover:text-white transition-all cursor-pointer text-emerald-400 hover:text-emerald-300 font-semibold"
+                      className="flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 hover:bg-zinc-100 dark:hover:bg-zinc-900 hover:text-emerald-600 dark:hover:text-emerald-300 transition-all cursor-pointer text-emerald-600 dark:text-emerald-400 font-semibold"
                     >
                       <span>🎙️</span>
                       <span>Bảng điều khiển Live</span>
@@ -114,7 +117,7 @@ export function AuthWidget() {
                       <Link
                         href={`/streamer/${user.slug}`}
                         onClick={() => setIsOpen(false)}
-                        className="flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 hover:bg-zinc-900 hover:text-white transition-all cursor-pointer"
+                        className="flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 hover:bg-zinc-100 dark:hover:bg-zinc-900 hover:text-zinc-900 dark:hover:text-white transition-all cursor-pointer"
                       >
                         <span>📺</span>
                         <span>Kênh của tôi (Public)</span>
@@ -127,7 +130,7 @@ export function AuthWidget() {
                 <Link
                   href="/"
                   onClick={() => setIsOpen(false)}
-                  className="flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 hover:bg-zinc-900 hover:text-white transition-all cursor-pointer"
+                  className="flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 hover:bg-zinc-100 dark:hover:bg-zinc-900 hover:text-zinc-900 dark:hover:text-white transition-all cursor-pointer"
                 >
                   <span>🏠</span>
                   <span>Trang chủ Go-Stream</span>
@@ -135,22 +138,24 @@ export function AuthWidget() {
 
                 {/* 4. Upgrade option if not yet streamer/admin */}
                 {user.role !== "author" && user.role !== "admin" && (
-                  <Link
-                    href="/register/author"
-                    onClick={() => setIsOpen(false)}
-                    className="flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300 transition-all font-semibold cursor-pointer"
+                  <button
+                    onClick={() => {
+                      setIsOpen(false);
+                      openAuthModal("login");
+                    }}
+                    className="flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-left text-emerald-650 dark:text-emerald-450 hover:bg-emerald-500/10 transition-all font-semibold cursor-pointer"
                   >
                     <span>✨</span>
                     <span>Trở thành Streamer</span>
-                  </Link>
+                  </button>
                 )}
               </div>
 
               {/* Dropdown Footer: Logout button */}
-              <div className="border-t border-zinc-900 pt-1.5 pb-1">
+              <div className="border-t border-zinc-100 dark:border-zinc-900 pt-1.5 pb-1">
                 <button
                   onClick={handleLogout}
-                  className="flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-red-500 hover:bg-red-500/10 hover:text-red-400 transition-all cursor-pointer font-bold text-left"
+                  className="flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-red-500 hover:bg-red-500/10 dark:hover:bg-red-500/10 hover:text-red-650 dark:hover:text-red-400 transition-all cursor-pointer font-bold text-left"
                 >
                   <span>🚪</span>
                   <span>Đăng xuất</span>
@@ -163,8 +168,8 @@ export function AuthWidget() {
         </div>
       ) : (
         <div className="flex items-center gap-2.5">
-          <Link
-            href="/register/author"
+          <button
+            onClick={() => openAuthModal("register")}
             className="hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-400 hover:text-emerald-400 transition-colors mr-1 cursor-pointer"
           >
             <span className="relative flex h-1.5 w-1.5">
@@ -172,19 +177,21 @@ export function AuthWidget() {
               <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
             </span>
             Trở thành Streamer
-          </Link>
-          <Link
-            href="/login"
-            className="rounded-lg bg-zinc-950 border border-zinc-800 px-4 py-2 text-xs font-semibold text-zinc-200 hover:text-white hover:bg-zinc-900 transition-all"
+          </button>
+          <Button
+            onClick={() => openAuthModal("login")}
+            variant="outline"
+            size="sm"
           >
             Đăng nhập
-          </Link>
-          <Link
-            href="/register"
-            className="rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2 text-xs font-semibold text-white shadow-lg transition-all duration-200 hover:from-emerald-500 hover:to-teal-500 hover:shadow-emerald-600/10"
+          </Button>
+          <Button
+            onClick={() => openAuthModal("register")}
+            variant="primary"
+            size="sm"
           >
             Đăng ký
-          </Link>
+          </Button>
         </div>
       )}
     </div>

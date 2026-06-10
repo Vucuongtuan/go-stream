@@ -1,11 +1,30 @@
 "use client";
 
 import React, { useState } from "react";
+import { cva, type VariantProps } from "class-variance-authority";
+import { cn } from "@/utils/cn";
 
-export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
-  label?: string;
-  error?: string | null;
-}
+const inputVariants = cva(
+  "block w-full rounded-xl border text-sm text-foreground shadow-sm transition-all duration-300 focus:ring-2 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed",
+  {
+    variants: {
+      inputVariant: {
+        default: "bg-zinc-950/60 border-zinc-200 dark:border-zinc-800 focus:border-neon-primary focus:ring-neon-primary/25 placeholder-zinc-400 dark:placeholder-zinc-650",
+        filled: "bg-zinc-100 dark:bg-zinc-900/50 border-transparent focus:bg-zinc-50 dark:focus:bg-zinc-950 focus:border-neon-primary focus:ring-neon-primary/25 placeholder-zinc-400 dark:placeholder-zinc-500",
+        cyberpunk: "bg-zinc-950 border-neon-yellow/40 text-neon-yellow placeholder-neon-yellow/30 focus:border-neon-yellow focus:ring-neon-yellow/20 font-mono",
+      },
+      inputSize: {
+        sm: "px-3 py-2 text-xs rounded-lg",
+        md: "px-4.5 py-2.5 text-sm",
+        lg: "px-5.5 py-3.5 text-base rounded-2xl",
+      }
+    },
+    defaultVariants: {
+      inputVariant: "default",
+      inputSize: "md",
+    }
+  }
+);
 
 function EyeIcon({ className }: { className?: string }) {
   return (
@@ -52,12 +71,21 @@ function EyeSlashIcon({ className }: { className?: string }) {
   );
 }
 
+export interface InputProps
+  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "size">,
+    VariantProps<typeof inputVariants> {
+  label?: string;
+  error?: string | null;
+}
+
 export function Input({
   label,
   id,
   error,
   className = "",
   type = "text",
+  inputVariant,
+  inputSize,
   ...props
 }: InputProps) {
   const [showPassword, setShowPassword] = useState(false);
@@ -69,7 +97,7 @@ export function Input({
       {label && (
         <label
           htmlFor={id}
-          className="block text-sm font-medium text-zinc-300 mb-1.5"
+          className="block text-xs font-bold text-zinc-600 dark:text-zinc-400 mb-1.5 uppercase tracking-wider select-none"
         >
           {label}
         </label>
@@ -78,13 +106,14 @@ export function Input({
         <input
           id={id}
           type={inputType}
-          className={`block w-full rounded-lg border bg-zinc-950 px-3.5 py-2.5 text-sm text-white placeholder-zinc-500 shadow-sm transition-all duration-200 focus:ring-1 focus:outline-none ${
-            isPassword ? "pr-10" : ""
-          } ${
+          className={cn(
+            inputVariants({ inputVariant, inputSize }),
+            isPassword ? "pr-11" : "",
             error
-              ? "border-red-500 focus:border-red-500 focus:ring-red-500/30"
-              : "border-zinc-800 focus:border-emerald-500 focus:ring-emerald-500/30"
-          } ${className}`}
+              ? "border-red-500 focus:border-red-500 focus:ring-red-500/20 dark:border-red-500/40"
+              : "",
+            className
+          )}
           {...props}
         />
         {isPassword && (
@@ -104,7 +133,7 @@ export function Input({
         )}
       </div>
       {error && (
-        <p className="mt-1 text-xs text-red-400 font-medium">{error}</p>
+        <p className="mt-1.5 text-xs text-red-500 dark:text-red-400 font-bold tracking-wide">{error}</p>
       )}
     </div>
   );

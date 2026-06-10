@@ -57,8 +57,7 @@ func (h *IngestHandler) OnPublish(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if room.Status == domain.RoomStatusLive {
-		response.Error(w, http.StatusConflict, "Room is already live")
-		return
+		logger.Warn("Ingest: room is already live, allowing republish", "room_id", room.ID)
 	}
 
 	room.PlaybackURL = storage.HLSLiveURL(streamKey)

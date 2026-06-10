@@ -112,6 +112,7 @@ func (s *DonationServiceImpl) Donate(ctx context.Context, senderID uint, roomID 
 	// 3. Publish donation.created event to Kafka asynchronously
 	if s.kafkaProducer != nil {
 		go func() {
+			// 3a. Publish to chat-events so the chat-service can broadcast the gift message
 			kafkaErr := s.kafkaProducer.Publish(context.Background(), kafka.TopicChatEvents, fmt.Sprintf("%d", roomID), kafka.Event{
 				EventType: kafka.EventChatMessage, // Chat Service maps to 'chat.message'
 				Timestamp: time.Now(),
@@ -130,7 +131,23 @@ func (s *DonationServiceImpl) Donate(ctx context.Context, senderID uint, roomID 
 			})
 			if kafkaErr != nil {
 				// Log but do not block HTTP response
-				fmt.Printf("Failed to publish donation event to Kafka: %v\n", kafkaErr)
+				fmt.Printf("Failed to publish donation chat event to Kafka: %v\n", kafkaErr)
+			}
+
+			// 3b. Publish dedicated donation.sent event for analytics tracking
+			analyticsErr := s.kafkaProducer.Publish(context.Background(), kafka.TopicDonationEvents, fmt.Sprintf("%d", roomID), kafka.Event{
+				EventType: kafka.EventDonationSent,
+				Timestamp: time.Now(),
+				Payload: map[string]any{
+					"room_id":     roomID,
+					"streamer_id": room.HostID,
+					"donor_id":    senderID,
+					"coin_amount": coinCost,
+					"gift_type":   giftType,
+				},
+			})
+			if analyticsErr != nil {
+				fmt.Printf("Failed to publish donation.sent analytics event to Kafka: %v\n", analyticsErr)
 			}
 		}()
 	}
