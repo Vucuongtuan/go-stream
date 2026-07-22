@@ -1,7 +1,8 @@
 import React from "react";
 import Link from "next/link";
 import { MainLayout } from "@/components/layouts";
-import { StreamCard, CategoryCard, FeaturedCarousel } from "@/components/features";
+import { StreamCard, FeaturedCarousel } from "@/components/features";
+import { CategorySection } from "@/components/sections";
 import { Card } from "@/components/ui";
 import { roomsService } from "@/services/rooms.service";
 import { analyticsService } from "@/services/analytics.service";
@@ -146,40 +147,7 @@ export default async function HomePage() {
           </section>
         )}
 
-        {/* Categories */}
-        <section className="space-y-6">
-          <div className="flex items-center justify-between border-b border-zinc-200/60 pb-3.5 dark:border-zinc-900/60">
-            <h2 className="flex items-center gap-2.5 text-base font-extrabold tracking-tight text-zinc-900 dark:text-white uppercase">
-              <span className="h-4 w-1 rounded-full bg-neon-primary shadow-[0_0_8px_rgba(168,85,247,0.6)]" />
-              Thể loại hàng đầu
-            </h2>
-            <Link
-              href="/categories"
-              className="text-xs font-bold text-zinc-500 transition-colors hover:text-neon-primary dark:text-zinc-400 dark:hover:text-neon-primary"
-            >
-              Xem thêm &rarr;
-            </Link>
-          </div>
-
-          {liveCategories.length > 0 ? (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-              {liveCategories.slice(0, 8).map((cat) => (
-                <CategoryCard
-                  key={cat.id}
-                  name={cat.name}
-                  viewers=""
-                />
-              ))}
-            </div>
-          ) : (
-            /* Fallback static categories */
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-              {["League of Legends", "Just Chatting", "Grand Theft Auto V", "Counter-Strike 2"].map((name) => (
-                <CategoryCard key={name} name={name} viewers="" />
-              ))}
-            </div>
-          )}
-        </section>
+        <CategorySection title="Thể loại" slug={'/categories'} categories={liveCategories} />
       </div>
     </MainLayout>
   );
