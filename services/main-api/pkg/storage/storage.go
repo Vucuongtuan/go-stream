@@ -63,12 +63,19 @@ func VideoURL(filename string) string {
 	return publicURL(fmt.Sprintf("videos/%s", filename))
 }
 
+// VideoPath returns a filesystem location for a rendered short video.
+func VideoPath(filename string) string {
+	return filepath.Join(basePath(), "videos", filename)
+}
+
 // ThumbnailURL returns the public URL for a thumbnail.
 func ThumbnailURL(filename string) string {
 	return publicURL(fmt.Sprintf("thumbnails/%s", filename))
 }
 
 func publicURL(subPath string) string {
-	base := config.GetEnv("STORAGE_BASE_URL", "http://localhost:3000/storage")
+	// Keep media URLs origin-relative by default. A browser on another device
+	// must request the same public gateway, not its own localhost.
+	base := config.GetEnv("STORAGE_BASE_URL", "/storage")
 	return fmt.Sprintf("%s/%s", strings.TrimRight(base, "/"), subPath)
 }

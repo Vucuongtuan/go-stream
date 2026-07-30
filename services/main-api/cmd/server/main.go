@@ -57,6 +57,8 @@ func main() {
 	pollRepo := repository.NewPollRepository(db)
 	moderationRepo := repository.NewModerationRepository(db)
 	giftRepo := repository.NewGiftRepository(db)
+	shortVideoRepo := repository.NewShortVideoRepository(db)
+	authorFollowRepo := repository.NewAuthorFollowRepository(db)
 
 	userSvc := service.NewUserService(userRepo)
 	authSvc := service.NewAuthService(userRepo, identityRepo, walletRepo)
@@ -70,6 +72,8 @@ func main() {
 	pollSvc := service.NewPollService(db, pollRepo, moderationRepo, kafkaProducer)
 	moderationSvc := service.NewModerationService(db, moderationRepo, userRepo, kafkaProducer)
 	giftSvc := service.NewGiftService(giftRepo)
+	shortVideoSvc := service.NewShortVideoService(shortVideoRepo, authorRepo, authorFollowRepo, tagRepo)
+	authorFollowSvc := service.NewAuthorFollowService(authorFollowRepo, authorRepo)
 
 	chatHub := chat.NewHub()
 
@@ -87,6 +91,8 @@ func main() {
 	pollHandler := handler.NewPollHandler(pollSvc)
 	moderationHandler := handler.NewModerationHandler(moderationSvc)
 	giftHandler := handler.NewGiftHandler(giftSvc)
+	shortVideoHandler := handler.NewShortVideoHandler(shortVideoSvc, authorSvc, roomRepo)
+	authorFollowHandler := handler.NewAuthorFollowHandler(authorFollowSvc)
 
 	// Config router
 	mux := http.NewServeMux()
@@ -96,7 +102,7 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 	})
 	mux.HandleFunc("GET /readyz", readinessHandler(db, redisClient))
-	router.SetupRoutes(mux, userHandler, authHandler, roomHandler, chatHandler, ingestHandler, searchHandler, categoryHandler, tagHandler, authorHandler, donationHandler, predictionHandler, pollHandler, moderationHandler, giftHandler, userRepo)
+	router.SetupRoutes(mux, userHandler, authHandler, roomHandler, chatHandler, ingestHandler, searchHandler, categoryHandler, tagHandler, authorHandler, donationHandler, predictionHandler, pollHandler, moderationHandler, giftHandler, shortVideoHandler, authorFollowHandler, userRepo)
 
 	// Port
 	port := config.GetEnv("PORT", "8080")

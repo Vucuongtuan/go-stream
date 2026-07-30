@@ -69,6 +69,10 @@ func (s *authorService) GetAuthorByUserID(userID uint) (*domain.Author, error) {
 	return s.authorRepo.FindByUserID(userID)
 }
 
+func (s *authorService) GetAuthorByUserSlug(slug string) (*domain.Author, error) {
+	return s.authorRepo.FindByUserSlug(slug)
+}
+
 func (s *authorService) GetApprovedAuthors(limit, offset int) ([]domain.Author, error) {
 	status := domain.AuthorStatusApproved
 	return s.authorRepo.FindAll(&status, limit, offset)

@@ -25,6 +25,16 @@ func NewAuthorHandler(asv domain.AuthorService, repo domain.AuthorRepository, us
 	return &AuthorHandler{asv: asv, repo: repo, users: users}
 }
 
+// GetPublicProfile returns channel-level stats that are not included in a Room/User response.
+func (h *AuthorHandler) GetPublicProfile(w http.ResponseWriter, r *http.Request) {
+	author, err := h.asv.GetAuthorByUserSlug(r.PathValue("slug"))
+	if err != nil || author.Status != domain.AuthorStatusApproved {
+		response.Error(w, http.StatusNotFound, "Không tìm thấy streamer")
+		return
+	}
+	response.Success(w, http.StatusOK, author)
+}
+
 // Apply handles POST /api/authors/apply
 func (h *AuthorHandler) Apply(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value(middleware.ContextKeyUserID).(uint)

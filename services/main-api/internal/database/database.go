@@ -41,6 +41,7 @@ func ConnectDB() *gorm.DB {
 		&domain.User{},
 		&domain.Identity{},
 		&domain.Author{},
+		&domain.AuthorFollow{},
 		&domain.SocialLink{},
 		&domain.Category{},
 		&domain.Game{},

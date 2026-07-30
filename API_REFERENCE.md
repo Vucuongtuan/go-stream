@@ -102,6 +102,24 @@ Hai endpoint sau chỉ dành cho Nginx RTMP/ingest server, không gọi từ app
 
 Chat message tối đa 500 ký tự. App client phải reconnect SSE khi mất kết nối và chỉ render text an toàn, không chèn bằng `innerHTML`.
 
+## Video ngắn của author
+
+Video upload được lưu local trong bản MVP. Chỉ user đã đăng nhập và đang follow author đích mới có thể đăng video vào kênh đó. File tối đa 100 MB, hỗ trợ `.mp4`, `.webm`, `.mov`.
+
+| Method | Path | Auth | Body / ghi chú |
+| --- | --- | --- | --- |
+| GET | `/api/videos/feed?limit=&offset=` | No | Feed video đã publish |
+| GET | `/api/authors/{slug}/videos?limit=&offset=` | No | Video đã publish của một kênh |
+| GET | `/api/videos/{id}` | No | Chi tiết một video đã publish |
+| POST | `/api/videos` | Auth | `multipart/form-data`: `author_slug`, `video`, `title` bắt buộc; user phải follow author này |
+| PUT | `/api/videos/{id}` | Auth | `multipart/form-data`: `title`, `description`, `thumbnail`, `status` (`published`/`private`), `tag_ids` (CSV); chỉ người đăng được sửa |
+| DELETE | `/api/videos/{id}` | Auth | Chỉ người đăng được xoá |
+| POST | `/api/videos/{id}/view` | No | Ghi nhận lượt xem |
+| POST | `/api/rooms/{id}/clips` | Auth | `{ "title": "...", "description": "...", "duration_seconds": 10..60 }`; chỉ user đang follow author của live. Render MP4 từ HLS gần nhất rồi publish vào kênh author |
+| POST | `/api/authors/{slug}/follow` | Auth | Follow kênh; mở quyền đăng video vào kênh |
+| DELETE | `/api/authors/{slug}/follow` | Auth | Bỏ follow kênh |
+| GET | `/api/authors/{slug}/follow-status` | Auth | Trả `{ "following": true/false }` |
+
 ## Wallet, check-in và donate
 
 | Method | Path | Auth | Body / ghi chú |
