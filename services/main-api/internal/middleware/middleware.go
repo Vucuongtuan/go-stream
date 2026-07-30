@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"net/http"
+	"net/netip"
 	"strings"
 
 	"go-stream/services/main-api/internal/config"
@@ -65,12 +66,28 @@ func IngestOnly(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		allowed := config.GetEnv("INGEST_SERVER_IP", "127.0.0.1")
 		clientIP := realIP(r)
-		if clientIP != allowed {
+		if clientIP != allowed && !isIngestCIDR(clientIP, config.GetEnv("INGEST_SERVER_CIDR", "")) {
 			response.Error(w, http.StatusForbidden, "Forbidden")
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// isIngestCIDR accepts a comma-separated allowlist for containerized ingest
+// servers, whose bridge-network address is not stable between deployments.
+func isIngestCIDR(clientIP, cidrs string) bool {
+	ip, err := netip.ParseAddr(clientIP)
+	if err != nil {
+		return false
+	}
+	for _, value := range strings.Split(cidrs, ",") {
+		prefix, err := netip.ParsePrefix(strings.TrimSpace(value))
+		if err == nil && prefix.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 func extractBearerToken(r *http.Request) string {

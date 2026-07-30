@@ -55,6 +55,18 @@ func main() {
 
 	// 5. Initialize and run HTTP server using native net/http multiplexer
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if err := rdb.Ping(ctx).Err(); err != nil {
+			http.Error(w, "redis is unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
 
 	// --- Room real-time stats ---
 	mux.HandleFunc("GET /api/analytics/rooms/{roomId}", analyticsHandler.GetRoomStats)
@@ -66,10 +78,12 @@ func main() {
 	mux.HandleFunc("GET /api/analytics/leaderboard/streamers/{streamerId}", analyticsHandler.GetStreamerRank)
 
 	server := &http.Server{
-		Addr:         ":" + port,
-		Handler:      loggerMiddleware(mux),
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		Addr:              ":" + port,
+		Handler:           loggerMiddleware(mux),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	// 6. Initialize Kafka Consumer
@@ -82,6 +96,7 @@ func main() {
 		analyticsRepo,
 		leaderboardRepo,
 		roomStatsRepo,
+		consumer.NewEventDeduper(rdb),
 	)
 
 	// Application runtime context

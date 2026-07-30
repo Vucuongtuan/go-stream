@@ -15,12 +15,12 @@ export function MainLayout({ children }: MainLayoutProps) {
       <Header />
 
       {/* Spacing flex container for Sidebar & Main Content */}
-      <div className="flex flex-1 flex-row">
+      <div className="flex min-w-0 flex-1 flex-row">
         {/* Collapsible Sidebar */}
         <Sidebar />
 
         {/* Dynamic page content scrolls naturally on document level */}
-        <main className="flex-1 min-w-0 bg-white dark:bg-zinc-950 p-4 sm:p-6 lg:p-8">
+        <main className="min-w-0 flex-1 bg-white p-3 sm:p-6 lg:p-8 dark:bg-zinc-950">
           {children}
         </main>
       </div>

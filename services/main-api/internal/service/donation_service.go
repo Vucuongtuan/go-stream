@@ -4,20 +4,25 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 	"go-stream/services/main-api/internal/domain"
 	"go-stream/services/main-api/internal/kafka"
+	"go-stream/services/main-api/internal/outbox"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
+const dailyCheckInReward int64 = 10
+
 type DonationServiceImpl struct {
-	db            *gorm.DB
-	walletRepo    domain.WalletRepository
-	donationRepo  domain.DonationRepository
-	rdb           *redis.Client
-	kafkaProducer *kafka.Producer
+	db           *gorm.DB
+	walletRepo   domain.WalletRepository
+	donationRepo domain.DonationRepository
+	rdb          *redis.Client
+	outboxRepo   *outbox.Repository
 }
 
 func NewDonationService(
@@ -25,14 +30,14 @@ func NewDonationService(
 	walletRepo domain.WalletRepository,
 	donationRepo domain.DonationRepository,
 	rdb *redis.Client,
-	kafkaProducer *kafka.Producer,
+	outboxRepo *outbox.Repository,
 ) domain.DonationService {
 	return &DonationServiceImpl{
-		db:            db,
-		walletRepo:    walletRepo,
-		donationRepo:  donationRepo,
-		rdb:           rdb,
-		kafkaProducer: kafkaProducer,
+		db:           db,
+		walletRepo:   walletRepo,
+		donationRepo: donationRepo,
+		rdb:          rdb,
+		outboxRepo:   outboxRepo,
 	}
 }
 
@@ -46,9 +51,16 @@ var giftRates = map[int]int64{
 }
 
 func (s *DonationServiceImpl) Donate(ctx context.Context, senderID uint, roomID uint, giftType int, message string) (*domain.Donation, error) {
-	coinCost, ok := giftRates[giftType]
-	if !ok {
-		return nil, errors.New("invalid gift type")
+	var coinCost int64
+	var gift domain.Gift
+	if err := s.db.WithContext(ctx).First(&gift, giftType).Error; err == nil {
+		coinCost = gift.CoinPrice
+	} else {
+		rate, ok := giftRates[giftType]
+		if !ok {
+			return nil, errors.New("invalid gift type")
+		}
+		coinCost = rate
 	}
 
 	donation := &domain.Donation{
@@ -76,6 +88,13 @@ func (s *DonationServiceImpl) Donate(ctx context.Context, senderID uint, roomID 
 		return nil, errors.New("streamer has not activated their donation wallet")
 	}
 
+	// Fetch sender data before the transaction so the durable event has the
+	// complete payload when the donation is committed.
+	var sender domain.User
+	if err := s.db.WithContext(ctx).First(&sender, senderID).Error; err != nil {
+		sender.Name = fmt.Sprintf("User %d", senderID)
+	}
+
 	// Database Transaction block to ensure consistency (ACID)
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// 1. Deduct sender wallet balance (uses SELECT FOR UPDATE lock internally)
@@ -96,60 +115,28 @@ func (s *DonationServiceImpl) Donate(ctx context.Context, senderID uint, roomID 
 			return err
 		}
 
+		if s.outboxRepo != nil {
+			chatEvent := kafka.Event{EventType: kafka.EventChatMessage, Timestamp: time.Now(), Payload: map[string]any{
+				"id": fmt.Sprintf("donate-%d", donation.ID), "room_id": roomID, "user_id": senderID,
+				"user_name": sender.Name, "avatar": sender.Avatar, "content": message, "type": "gift",
+				"created_at": donation.CreatedAt.Format(time.RFC3339), "gift_type": giftType, "coin": coinCost,
+			}}
+			if err := s.outboxRepo.Enqueue(tx, kafka.TopicChatEvents, fmt.Sprintf("%d", roomID), chatEvent); err != nil {
+				return err
+			}
+			donationEvent := kafka.Event{EventType: kafka.EventDonationSent, Timestamp: time.Now(), Payload: map[string]any{
+				"room_id": roomID, "streamer_id": room.HostID, "donor_id": senderID, "coin_amount": coinCost, "gift_type": giftType,
+			}}
+			if err := s.outboxRepo.Enqueue(tx, kafka.TopicDonationEvents, fmt.Sprintf("%d", roomID), donationEvent); err != nil {
+				return err
+			}
+		}
+
 		return nil
 	})
 
 	if err != nil {
 		return nil, err
-	}
-
-	// Fetch sender metadata for event payload
-	var sender domain.User
-	if err := s.db.WithContext(ctx).First(&sender, senderID).Error; err != nil {
-		sender.Name = fmt.Sprintf("User %d", senderID)
-	}
-
-	// 3. Publish donation.created event to Kafka asynchronously
-	if s.kafkaProducer != nil {
-		go func() {
-			// 3a. Publish to chat-events so the chat-service can broadcast the gift message
-			kafkaErr := s.kafkaProducer.Publish(context.Background(), kafka.TopicChatEvents, fmt.Sprintf("%d", roomID), kafka.Event{
-				EventType: kafka.EventChatMessage, // Chat Service maps to 'chat.message'
-				Timestamp: time.Now(),
-				Payload: map[string]any{
-					"id":         fmt.Sprintf("donate-%d", donation.ID),
-					"room_id":    roomID,
-					"user_id":    senderID,
-					"user_name":  sender.Name,
-					"avatar":     sender.Avatar,
-					"content":    message,
-					"type":       "gift",
-					"created_at": donation.CreatedAt.Format(time.RFC3339),
-					"gift_type":  giftType,
-					"coin":       coinCost,
-				},
-			})
-			if kafkaErr != nil {
-				// Log but do not block HTTP response
-				fmt.Printf("Failed to publish donation chat event to Kafka: %v\n", kafkaErr)
-			}
-
-			// 3b. Publish dedicated donation.sent event for analytics tracking
-			analyticsErr := s.kafkaProducer.Publish(context.Background(), kafka.TopicDonationEvents, fmt.Sprintf("%d", roomID), kafka.Event{
-				EventType: kafka.EventDonationSent,
-				Timestamp: time.Now(),
-				Payload: map[string]any{
-					"room_id":     roomID,
-					"streamer_id": room.HostID,
-					"donor_id":    senderID,
-					"coin_amount": coinCost,
-					"gift_type":   giftType,
-				},
-			})
-			if analyticsErr != nil {
-				fmt.Printf("Failed to publish donation.sent analytics event to Kafka: %v\n", analyticsErr)
-			}
-		}()
 	}
 
 	return donation, nil
@@ -160,34 +147,88 @@ func (s *DonationServiceImpl) GetWallet(ctx context.Context, userID uint) (*doma
 }
 
 func (s *DonationServiceImpl) DailyCheckIn(ctx context.Context, userID uint) (int64, error) {
-	// Redis key structure for daily checkin tracking: gostream:user:{id}:checkin:YYYY-MM-DD
 	loc, _ := time.LoadLocation("Asia/Ho_Chi_Minh")
 	todayStr := time.Now().In(loc).Format("2006-01-02")
-	redisKey := fmt.Sprintf("gostream:user:%d:checkin:%s", userID, todayStr)
+	var balance int64
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var user domain.User
+		if err := tx.First(&user, userID).Error; err != nil {
+			return err
+		}
+		if user.Role != "user" {
+			return domain.ErrDailyCheckInUserOnly
+		}
 
-	// Redis SETNX: atomic operation to verify checkin
-	success, err := s.rdb.SetNX(ctx, redisKey, "checked", 24*time.Hour).Result()
+		checkIn := domain.DailyCheckIn{
+			UserID:      userID,
+			CheckInDate: todayStr,
+			Reward:      dailyCheckInReward,
+		}
+		result := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "user_id"}, {Name: "check_in_date"}},
+			DoNothing: true,
+		}).Create(&checkIn)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return domain.ErrAlreadyCheckedIn
+		}
+
+		if err := s.walletRepo.UpdateBalanceWithTx(ctx, tx, userID, dailyCheckInReward); err != nil {
+			return err
+		}
+		var wallet domain.Wallet
+		if err := tx.Where("user_id = ?", userID).First(&wallet).Error; err != nil {
+			return err
+		}
+		balance = wallet.Balance
+		return nil
+	})
 	if err != nil {
 		return 0, err
 	}
-	if !success {
-		return 0, errors.New("already checked in today")
+
+	return balance, nil
+}
+
+func (s *DonationServiceImpl) GetDailyCheckInStatus(ctx context.Context, userID uint) (*domain.DailyCheckInStatus, error) {
+	var user domain.User
+	if err := s.db.WithContext(ctx).First(&user, userID).Error; err != nil {
+		return nil, err
+	}
+	if user.Role != "user" {
+		return nil, domain.ErrDailyCheckInUserOnly
 	}
 
-	// Add 10 Coins
-	const checkinReward = 10
-	err = s.walletRepo.CheckIn(ctx, userID, checkinReward)
+	loc, _ := time.LoadLocation("Asia/Ho_Chi_Minh")
+	today := time.Now().In(loc)
+	// Monday-Sunday grid resets naturally every week, keeping the UI to seven days.
+	weekStart := today.AddDate(0, 0, -((int(today.Weekday()) + 6) % 7))
+	weekEnd := weekStart.AddDate(0, 0, 6)
+	checkIns, err := s.walletRepo.FindCheckInsByDateRange(ctx, userID, weekStart.Format("2006-01-02"), weekEnd.Format("2006-01-02"))
 	if err != nil {
-		// Clean up Redis lock on DB failure
-		s.rdb.Del(ctx, redisKey)
-		return 0, err
+		return nil, err
 	}
 
-	// Fetch final balance
-	wallet, err := s.walletRepo.FindByUserID(ctx, userID)
-	if err != nil {
-		return 0, nil
+	claimed := make(map[string]struct{}, len(checkIns))
+	for _, checkIn := range checkIns {
+		// PostgreSQL DATE may be scanned by the driver with a time suffix.
+		// The calendar is keyed by YYYY-MM-DD, so normalize it before matching.
+		date := strings.TrimSpace(checkIn.CheckInDate)
+		if len(date) >= len("2006-01-02") {
+			date = date[:len("2006-01-02")]
+		}
+		claimed[date] = struct{}{}
 	}
-
-	return wallet.Balance, nil
+	status := &domain.DailyCheckInStatus{Reward: dailyCheckInReward, Days: make([]domain.DailyCheckInDay, 7)}
+	for i := range status.Days {
+		date := weekStart.AddDate(0, 0, i).Format("2006-01-02")
+		_, status.Days[i].Claimed = claimed[date]
+		status.Days[i].Date = date
+		if date == today.Format("2006-01-02") {
+			status.ClaimedToday = status.Days[i].Claimed
+		}
+	}
+	return status, nil
 }

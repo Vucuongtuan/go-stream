@@ -1,4 +1,4 @@
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:80";
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
 export interface Room {
   id: number;
@@ -6,7 +6,7 @@ export interface Room {
   title: string;
   description?: string;
   thumbnail?: string;
-  status: "offline" | "live" | "ended";
+  status: "offline" | "ready" | "live" | "ended";
   visibility: "public" | "private" | "unlisted";
   playback_url?: string;
   viewer_count: number;
@@ -46,10 +46,15 @@ async function fetchAPI<T>(path: string, init?: RequestInit): Promise<T | null> 
 
 export const roomsService = {
   // Live rooms list needs to be fresh instantly, avoid caching
-  getLiveRooms: () => fetchAPI<Room[]>(`/api/rooms?status=live`, { cache: "no-store" }),
+  getLiveRooms: (limit = 50, offset = 0) =>
+    fetchAPI<Room[]>(`/api/rooms?status=live&limit=${limit}&offset=${offset}`, { cache: "no-store" }),
   
   // Categories list can be cached as it rarely changes
   getCategories: () => fetchAPI<Category[]>(`/api/categories`, { next: { revalidate: 60 } }),
+
+  getCategoryBySlug: (slug: string) => fetchAPI<Category>(`/api/category/slug/${encodeURIComponent(slug)}`, { next: { revalidate: 60 } }),
+
+  getLiveRoomsByCategory: (categoryId: number) => fetchAPI<Room[]>(`/api/rooms?category_id=${categoryId}`, { cache: "no-store" }),
   
   // Single room detail needs to be fresh
   getRoomBySlug: (slug: string) => fetchAPI<Room>(`/api/streamers/${slug}`, { cache: "no-store" }),

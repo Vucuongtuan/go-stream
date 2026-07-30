@@ -12,6 +12,8 @@ type User struct {
 	Email     string         `gorm:"size:255;index"  json:"email,omitempty"`
 	Slug      string         `gorm:"size:100;uniqueIndex" json:"slug"`
 	Avatar    string         `json:"avatar,omitempty"`
+	Bio       string         `gorm:"size:2000" json:"bio,omitempty"`
+	CoverURL  string         `gorm:"size:512" json:"cover_url,omitempty"`
 	Role      string         `gorm:"size:20;default:'user'" json:"role"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
@@ -33,4 +35,3 @@ type UserService interface {
 	GetAllUsers() ([]User, error)
 	GetUserByID(id uint) (*User, error)
 }
-

@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"go-stream/services/notification-service/internal/consumer"
 	"go-stream/services/notification-service/internal/notifier"
@@ -41,6 +44,25 @@ func main() {
 		}
 	}()
 
+	// Liveness endpoint for the container orchestrator. Notification delivery
+	// is asynchronous, so it deliberately does not expose a public API.
+	healthServer := &http.Server{
+		Addr:              ":" + getEnv("PORT", "3002"),
+		ReadHeaderTimeout: 5 * time.Second,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet && r.URL.Path == "/healthz" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+			http.NotFound(w, r)
+		}),
+	}
+	go func() {
+		if err := healthServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("Notification health server failed", "error", err)
+		}
+	}()
+
 	slog.Info("🟠 Notification Service started", "topics", topics)
 
 	// Graceful shutdown
@@ -51,6 +73,11 @@ func main() {
 	fmt.Println("\n🛑 Shutting down Notification Service...")
 	cancel()
 	c.Close()
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	if err := healthServer.Shutdown(shutdownCtx); err != nil {
+		slog.Error("Notification health server shutdown failed", "error", err)
+	}
 	slog.Info("Notification Service stopped")
 }
 

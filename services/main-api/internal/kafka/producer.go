@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync"
 	"time"
 
 	kafkago "github.com/segmentio/kafka-go"
@@ -21,6 +22,7 @@ type Event struct {
 type Producer struct {
 	writers map[string]*kafkago.Writer
 	brokers []string
+	mu      sync.Mutex
 }
 
 func NewProducer(brokers string) *Producer {
@@ -32,6 +34,8 @@ func NewProducer(brokers string) *Producer {
 }
 
 func (p *Producer) getWriter(topic string) *kafkago.Writer {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if w, ok := p.writers[topic]; ok {
 		return w
 	}
@@ -66,6 +70,8 @@ func (p *Producer) Publish(ctx context.Context, topic string, key string, event 
 }
 
 func (p *Producer) Close() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	for _, w := range p.writers {
 		w.Close()
 	}

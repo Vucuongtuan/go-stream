@@ -5,13 +5,17 @@ import { ChatService } from '../chat/chat.service';
 @Injectable()
 export class KafkaConsumerService implements OnModuleInit {
   private consumer: Consumer;
+  private readonly instanceID = process.env.CHAT_INSTANCE_ID || process.env.HOSTNAME || 'chat-service';
 
   constructor(private readonly chatService: ChatService) {
     const kafka = new Kafka({
       clientId: 'chat-service',
       brokers: (process.env.KAFKA_BROKERS || 'localhost:9092').split(','),
     });
-    this.consumer = kafka.consumer({ groupId: 'chat-service-group' });
+    // Every chat instance needs every event so it can notify the SSE clients
+    // connected to that instance. A shared consumer group would deliver an
+    // event to only one replica.
+    this.consumer = kafka.consumer({ groupId: `chat-service-${this.instanceID}` });
   }
 
   async onModuleInit(): Promise<void> {
@@ -38,6 +42,9 @@ export class KafkaConsumerService implements OnModuleInit {
           } else if (topic === 'chat-events') {
             switch (event.event_type) {
               case 'chat.message':
+                // Local HTTP messages are already sent to connected SSE clients.
+                // Consuming and republishing them would duplicate every message.
+                if (event.source === this.instanceID) break;
                 // Check if it is a donation/gift type or standard chat
                 if (event.payload) {
                   this.chatService.publish(event.payload.room_id, {

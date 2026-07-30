@@ -1,6 +1,17 @@
 import { useAuthStore } from "@/store/authStore";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? `${window.location.protocol}//${window.location.hostname}` : "http://localhost:80");
+const configuredBaseURL = process.env.NEXT_PUBLIC_API_URL || "http://localhost";
+
+export function getAPIBaseURL(): string {
+  if (typeof window === "undefined") return configuredBaseURL;
+  const configured = new URL(configuredBaseURL, window.location.origin);
+  const isLocalConfiguredHost = configured.hostname === "localhost" || configured.hostname === "127.0.0.1";
+  const isRemoteBrowser = window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1";
+  // Proxy local development API requests through Next.js so remote devices use
+  // the same origin as the frontend. This avoids CORS and cookie issues when
+  // opening the dev server from a phone on the local network.
+  return isLocalConfiguredHost && isRemoteBrowser ? window.location.origin : configuredBaseURL;
+}
 
 export interface ApiResponse<T> {
   status: boolean;
@@ -23,7 +34,7 @@ let refreshRequest: Promise<string> | null = null;
 async function refreshAccessToken(): Promise<string> {
   if (!refreshRequest) {
     refreshRequest = (async () => {
-      const response = await fetch(`${BASE_URL}/api/auth/refresh`, {
+      const response = await fetch(`${getAPIBaseURL()}/api/auth/refresh`, {
         method: "POST",
         credentials: "include",
         headers: { Accept: "application/json" },
@@ -45,7 +56,7 @@ async function refreshAccessToken(): Promise<string> {
 }
 
 async function request<T>(path: string, options: RequestInit = {}, retried = false): Promise<T> {
-  const url = path.startsWith("http") ? path : `${BASE_URL}${path}`;
+  const url = path.startsWith("http") ? path : `${getAPIBaseURL()}${path}`;
   const headers = new Headers(options.headers);
   headers.set("Accept", "application/json");
   if (!headers.has("Content-Type") && !(options.body instanceof FormData)) headers.set("Content-Type", "application/json");

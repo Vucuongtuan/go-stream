@@ -14,7 +14,7 @@ export interface ChatMessage {
 export interface SendMessageDto {
   content: string;
   type?: 'text' | 'gift' | 'system';
-  user_id: number;
+  // Display details are not authorization data; identity always comes from JWT.
   user_name: string;
   avatar?: string;
 }

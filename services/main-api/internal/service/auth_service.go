@@ -2,17 +2,26 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"log/slog"
 	"time"
 
+	"go-stream/services/main-api/internal/config"
 	"go-stream/services/main-api/internal/domain"
 	"go-stream/services/main-api/internal/utils"
-	"go-stream/services/main-api/internal/config"
 
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
+
+// hashRefreshToken returns a fixed-length, non-reversible value suitable for
+// storage. JWT refresh tokens are longer than bcrypt's 72-byte input limit.
+func hashRefreshToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
 
 type authService struct {
 	userRepo     domain.UserRepository
@@ -66,10 +75,10 @@ func (s *authService) Register(name, email, password string) (*domain.User, erro
 		return nil, err
 	}
 
-	// Auto-create Wallet for new user with 100 free coins (IsActive set to false by default)
+	// Auto-create a starter wallet for every new user (IsActive is false until they become a streamer).
 	wallet := &domain.Wallet{
 		UserID:   user.ID,
-		Balance:  100,
+		Balance:  1000,
 		IsActive: false,
 	}
 	if err := s.walletRepo.Create(context.Background(), wallet); err != nil {
@@ -80,28 +89,74 @@ func (s *authService) Register(name, email, password string) (*domain.User, erro
 	return user, nil
 }
 
-func (s *authService) Login(email, password string) (*domain.User, string, error) {
+func (s *authService) Login(email, password string) (*domain.User, string, string, error) {
 	identity, err := s.identityRepo.FindByProviderAndEmail(domain.ProviderLocal, email)
 	if err != nil {
-		return nil, "", errors.New("invalid credentials")
+		return nil, "", "", errors.New("invalid credentials")
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(identity.PasswordHash), []byte(password)); err != nil {
-		return nil, "", errors.New("invalid credentials")
+		return nil, "", "", errors.New("invalid credentials")
 	}
 
 	user, err := s.userRepo.FindByID(identity.UserID)
 	if err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
 
 	secret := []byte(config.GetEnv("JWT_SECRET", "changeme"))
 	tokenPair, err := utils.GenerateTokenPair(user.ID, email, secret)
 	if err != nil {
-		return nil, "", err
+		return nil, "", "", err
+	}
+	identity.RefreshToken = hashRefreshToken(tokenPair.RefreshToken)
+	if err := s.identityRepo.Update(identity); err != nil {
+		return nil, "", "", err
 	}
 
-	return user, tokenPair.AccessToken, nil
+	return user, tokenPair.AccessToken, tokenPair.RefreshToken, nil
+}
+
+func (s *authService) Refresh(refreshToken string) (string, string, error) {
+	secret := []byte(config.GetEnv("JWT_SECRET", "changeme"))
+	claims, err := utils.ValidateRefreshToken(refreshToken, secret)
+	if err != nil {
+		return "", "", errors.New("invalid or expired refresh token")
+	}
+	identity, err := s.identityRepo.FindByProviderAndEmail(domain.ProviderLocal, claims.Email)
+	if err != nil || identity.UserID != claims.UserID || identity.RefreshToken == "" {
+		return "", "", errors.New("refresh session is no longer valid")
+	}
+	if identity.RefreshToken != hashRefreshToken(refreshToken) {
+		return "", "", errors.New("refresh session is no longer valid")
+	}
+
+	tokenPair, err := utils.GenerateTokenPair(claims.UserID, claims.Email, secret)
+	if err != nil {
+		return "", "", err
+	}
+	identity.RefreshToken = hashRefreshToken(tokenPair.RefreshToken)
+	if err := s.identityRepo.Update(identity); err != nil {
+		return "", "", err
+	}
+	return tokenPair.AccessToken, tokenPair.RefreshToken, nil
+}
+
+func (s *authService) RevokeRefresh(refreshToken string) {
+	secret := []byte(config.GetEnv("JWT_SECRET", "changeme"))
+	claims, err := utils.ValidateRefreshToken(refreshToken, secret)
+	if err != nil {
+		return
+	}
+	identity, err := s.identityRepo.FindByProviderAndEmail(domain.ProviderLocal, claims.Email)
+	if err != nil || identity.UserID != claims.UserID {
+		return
+	}
+	if identity.RefreshToken != hashRefreshToken(refreshToken) {
+		return
+	}
+	identity.RefreshToken = ""
+	_ = s.identityRepo.Update(identity)
 }
 
 func (s *authService) LoginWithOAuth(

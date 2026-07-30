@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -71,6 +72,14 @@ func (h *DonationHandler) CheckIn(w http.ResponseWriter, r *http.Request) {
 
 	newBalance, err := h.donationSvc.DailyCheckIn(r.Context(), userID)
 	if err != nil {
+		if errors.Is(err, domain.ErrDailyCheckInUserOnly) {
+			response.Error(w, http.StatusForbidden, "Daily check-in is available to user accounts only")
+			return
+		}
+		if errors.Is(err, domain.ErrAlreadyCheckedIn) {
+			response.Error(w, http.StatusConflict, "Already checked in today")
+			return
+		}
 		response.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -79,6 +88,25 @@ func (h *DonationHandler) CheckIn(w http.ResponseWriter, r *http.Request) {
 		"message":     "Check-in successful! +10 Coins",
 		"new_balance": newBalance,
 	})
+}
+
+func (h *DonationHandler) GetCheckInStatus(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.GetUserIDFromContext(r.Context())
+	if err != nil {
+		response.Error(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	status, err := h.donationSvc.GetDailyCheckInStatus(r.Context(), userID)
+	if err != nil {
+		if errors.Is(err, domain.ErrDailyCheckInUserOnly) {
+			response.Error(w, http.StatusForbidden, "Daily check-in is available to user accounts only")
+			return
+		}
+		response.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.Success(w, http.StatusOK, status)
 }
 
 func (h *DonationHandler) GetWallet(w http.ResponseWriter, r *http.Request) {

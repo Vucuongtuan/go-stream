@@ -22,7 +22,7 @@ export type Host = {
 export type Room = {
   id: number; host_id: number; title: string;
   description?: string; thumbnail?: string;
-  status: "offline" | "live" | "ended";
+  status: "offline" | "ready" | "live" | "ended";
   visibility: "public" | "private" | "unlisted";
   viewer_count: number; playback_url?: string;
   host: Host; category?: Category;

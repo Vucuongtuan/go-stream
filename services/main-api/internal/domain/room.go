@@ -11,6 +11,7 @@ type RoomVisibility string
 
 const (
 	RoomStatusOffline RoomStatus = "offline"
+	RoomStatusReady   RoomStatus = "ready"
 	RoomStatusLive    RoomStatus = "live"
 	RoomStatusEnded   RoomStatus = "ended"
 
@@ -22,25 +23,25 @@ const (
 type Room struct {
 	ID          uint           `gorm:"primaryKey"              json:"id"`
 	HostID      uint           `gorm:"not null;index"          json:"host_id"`
-	CategoryID  *uint          `gorm:"index"                   json:"category_id,omitempty"`
-	GameID      *uint          `gorm:"index"                   json:"game_id,omitempty"`
+	CategoryID  *uint          `gorm:"index:idx_rooms_live_category,priority:3" json:"category_id,omitempty"`
+	GameID      *uint          `gorm:"index:idx_rooms_live_game,priority:3"     json:"game_id,omitempty"`
 	Title       string         `gorm:"not null;size:255"       json:"title"`
 	Description string         `gorm:"size:2000"               json:"description,omitempty"`
 	Thumbnail   string         `gorm:"size:512"                json:"thumbnail,omitempty"`
 	StreamKey   string         `gorm:"uniqueIndex;size:64"     json:"-"`
-	Status      RoomStatus     `gorm:"default:offline;size:20" json:"status"`
-	Visibility  RoomVisibility `gorm:"default:public;size:20"  json:"visibility"`
+	Status      RoomStatus     `gorm:"default:offline;size:20;index:idx_rooms_live_category,priority:1;index:idx_rooms_live_game,priority:1;index:idx_rooms_live_recent,priority:1" json:"status"`
+	Visibility  RoomVisibility `gorm:"default:public;size:20;index:idx_rooms_live_category,priority:2;index:idx_rooms_live_game,priority:2;index:idx_rooms_live_recent,priority:2"  json:"visibility"`
 
 	PlaybackURL string `gorm:"size:512" json:"playback_url,omitempty"`
 	VodURL      string `gorm:"size:512" json:"vod_url,omitempty"`
 
 	Quality string `gorm:"default:auto;size:20" json:"quality"`
 
-	ViewerCount int        `gorm:"-"      json:"viewer_count"`
-	StartedAt   *time.Time `json:"started_at,omitempty"`
-	EndedAt     *time.Time `json:"ended_at,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	ViewerCount int            `gorm:"-"      json:"viewer_count"`
+	StartedAt   *time.Time     `gorm:"index:idx_rooms_live_recent,priority:3" json:"started_at,omitempty"`
+	EndedAt     *time.Time     `json:"ended_at,omitempty"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
 	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
 
 	Host     User      `gorm:"foreignKey:HostID"     json:"host,omitempty"`
@@ -71,7 +72,7 @@ type RoomFilter struct {
 }
 
 type RoomService interface {
-	GetLiveRooms(categoryID *uint, gameID *uint) ([]Room, error)
+	GetLiveRooms(categoryID *uint, gameID *uint, limit, offset int) ([]Room, error)
 	GetRoomByID(id uint) (*Room, error)
 	GetRoomsByHost(hostID uint) ([]Room, error)
 	GetRoomByHostSlug(slug string) (*Room, error)

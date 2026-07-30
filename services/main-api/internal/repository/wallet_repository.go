@@ -7,6 +7,7 @@ import (
 
 	"go-stream/services/main-api/internal/domain"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type GormWalletRepository struct {
@@ -33,7 +34,7 @@ func (r *GormWalletRepository) Create(ctx context.Context, wallet *domain.Wallet
 func (r *GormWalletRepository) UpdateBalanceWithTx(ctx context.Context, tx *gorm.DB, userID uint, amount int64) error {
 	// Select ... For Update to prevent race conditions (double spending)
 	var wallet domain.Wallet
-	err := tx.WithContext(ctx).Clauses(gorm.Expr("FOR UPDATE")).Where("user_id = ?", userID).First(&wallet).Error
+	err := tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ?", userID).First(&wallet).Error
 	if err != nil {
 		return err
 	}
@@ -46,13 +47,13 @@ func (r *GormWalletRepository) UpdateBalanceWithTx(ctx context.Context, tx *gorm
 	return tx.WithContext(ctx).Model(&wallet).Update("balance", newBalance).Error
 }
 
-// DailyCheckIn logs daily checkin activity. 
+// DailyCheckIn logs daily checkin activity.
 // For simplicity, we store the last check-in date in the user wallet metadata or a temporary transaction.
 // Here we use a query on transaction log or update the wallet directly using timezone-based date check.
 func (r *GormWalletRepository) CheckIn(ctx context.Context, userID uint, points int64) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var wallet domain.Wallet
-		err := tx.Clauses(gorm.Expr("FOR UPDATE")).Where("user_id = ?", userID).First(&wallet).Error
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ?", userID).First(&wallet).Error
 		if err != nil {
 			return err
 		}
@@ -68,4 +69,13 @@ func (r *GormWalletRepository) CheckIn(ctx context.Context, userID uint, points 
 func (r *GormWalletRepository) HasCheckedInToday(ctx context.Context, userID uint) (bool, error) {
 	// Handled atomically in service layer via Redis SetNX lock to ensure high performance
 	return false, nil
+}
+
+func (r *GormWalletRepository) FindCheckInsByDateRange(ctx context.Context, userID uint, startDate, endDate string) ([]domain.DailyCheckIn, error) {
+	var checkIns []domain.DailyCheckIn
+	err := r.db.WithContext(ctx).
+		Where("user_id = ? AND check_in_date BETWEEN ? AND ?", userID, startDate, endDate).
+		Order("check_in_date ASC").
+		Find(&checkIns).Error
+	return checkIns, err
 }

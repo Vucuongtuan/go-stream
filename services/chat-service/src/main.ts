@@ -8,12 +8,11 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter()
+    // Chat accepts a short text payload only; reject oversized bodies before
+    // they consume JSON parsing memory.
+    new FastifyAdapter({ bodyLimit: 64 * 1024 })
   );
 
-  // Enable service-level CORS only when explicitly requested.
-  // When running behind Nginx (recommended), keep this disabled so Nginx
-  // exclusively manages CORS headers and preflight responses.
   const enableServiceCors = process.env.ENABLE_SERVICE_CORS === 'true';
   if (enableServiceCors) {
     app.enableCors({

@@ -14,7 +14,7 @@ export function StreamCardVariant({
   const resolvedImageUrl = resolveMediaUrl(imageUrl);
 
   const content = (
-    <div className="w-[140px] shrink-0 sm:w-[156px]">
+    <div className="w-[140px] shrink-0 sm:w-[350px]">
       <div className="relative aspect-video overflow-hidden rounded-xl bg-zinc-200 dark:bg-zinc-900">
         {typeof viewers === "number" && viewers > 0 && <ViewerBadge viewers={viewers} />}
         {resolvedImageUrl ? (

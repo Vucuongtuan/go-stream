@@ -5,7 +5,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/utils/cn";
 
 const inputVariants = cva(
-  "block w-full rounded-xl border text-sm text-foreground shadow-sm transition-all duration-300 focus:ring-2 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed",
+  "block w-full rounded-xl border text-sm text-foreground transition-colors duration-150 focus:ring-2 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed",
   {
     variants: {
       inputVariant: {

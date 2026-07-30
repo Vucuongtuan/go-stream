@@ -14,7 +14,7 @@ export function CategoryCard({ name, imageUrl, href, viewers = 0 }: CategoryCard
   const resolvedImageUrl = imageUrl?.startsWith("http")
     ? imageUrl
     : imageUrl
-      ? `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:80"}${imageUrl}`
+      ? `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}${imageUrl}`
       : undefined;
 
   const card = (

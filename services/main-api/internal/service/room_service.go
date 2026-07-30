@@ -23,7 +23,7 @@ func NewRoomService(repo domain.RoomRepository, tagRepo domain.TagRepository, rd
 	return &roomService{repo: repo, tagRepo: tagRepo, rdb: rdb}
 }
 
-func (s *roomService) GetLiveRooms(categoryID *uint, gameID *uint) ([]domain.Room, error) {
+func (s *roomService) GetLiveRooms(categoryID *uint, gameID *uint, limit, offset int) ([]domain.Room, error) {
 	status := domain.RoomStatusLive
 	visibility := domain.RoomVisibilityPublic
 	rooms, err := s.repo.FindAll(domain.RoomFilter{
@@ -31,14 +31,47 @@ func (s *roomService) GetLiveRooms(categoryID *uint, gameID *uint) ([]domain.Roo
 		Visibility: &visibility,
 		CategoryID: categoryID,
 		GameID:     gameID,
+		Limit:      limit,
+		Offset:     offset,
 	})
 	if err != nil {
 		return nil, err
 	}
+	viewerCounts := s.getViewerCounts(rooms)
 	for i := range rooms {
-		rooms[i].ViewerCount = s.GetViewerCount(rooms[i].ID)
+		rooms[i].ViewerCount = viewerCounts[rooms[i].ID]
 	}
 	return rooms, nil
+}
+
+// getViewerCounts batches Redis maintenance and counting for a live-room list.
+// The old path did two Redis round trips per room, which made the browse page
+// slower as the number of active streams grew.
+func (s *roomService) getViewerCounts(rooms []domain.Room) map[uint]int {
+	counts := make(map[uint]int, len(rooms))
+	if s.rdb == nil || len(rooms) == 0 {
+		return counts
+	}
+
+	ctx := context.Background()
+	now := time.Now().Unix()
+	cutoff := fmt.Sprintf("%d", now-40)
+	pipe := s.rdb.Pipeline()
+	cards := make(map[uint]*redis.IntCmd, len(rooms))
+	for _, room := range rooms {
+		key := fmt.Sprintf("room:%d:viewers", room.ID)
+		pipe.ZRemRangeByScore(ctx, key, "-inf", cutoff)
+		cards[room.ID] = pipe.ZCard(ctx, key)
+	}
+	if _, err := pipe.Exec(ctx); err != nil {
+		return counts
+	}
+	for roomID, card := range cards {
+		if count, err := card.Result(); err == nil {
+			counts[roomID] = int(count)
+		}
+	}
+	return counts
 }
 
 func (s *roomService) GetRoomByID(id uint) (*domain.Room, error) {
@@ -111,9 +144,12 @@ func (s *roomService) GoLive(roomID, hostID uint) (*domain.Room, error) {
 		return nil, errors.New("room is already live")
 	}
 
-	now := time.Now()
-	room.Status = domain.RoomStatusLive
-	room.StartedAt = &now
+	// A room only becomes live after the RTMP ingest server confirms that OBS has
+	// published a valid stream key. This state keeps it out of public live lists
+	// while the author is preparing their encoder.
+	room.Status = domain.RoomStatusReady
+	room.PlaybackURL = ""
+	room.StartedAt = nil
 	room.EndedAt = nil
 
 	return room, s.repo.Update(room)
@@ -127,12 +163,16 @@ func (s *roomService) EndStream(roomID, hostID uint) error {
 	if room.HostID != hostID {
 		return errors.New("unauthorized")
 	}
-	if room.Status != domain.RoomStatusLive {
-		return errors.New("room is not live")
+	if room.Status != domain.RoomStatusLive && room.Status != domain.RoomStatusReady {
+		return errors.New("room is not live or awaiting ingest")
 	}
 
 	now := time.Now()
-	room.Status = domain.RoomStatusEnded
+	if room.Status == domain.RoomStatusReady {
+		room.Status = domain.RoomStatusOffline
+	} else {
+		room.Status = domain.RoomStatusEnded
+	}
 	room.EndedAt = &now
 
 	if err := s.repo.Update(room); err != nil {

@@ -48,7 +48,9 @@ func HLSLivePath(streamKey string) string {
 
 // HLSLiveURL returns the public HTTP URL for the live HLS manifest.
 func HLSLiveURL(streamKey string) string {
-	return publicURL(fmt.Sprintf("live/%s/index.m3u8", streamKey))
+	// nginx-rtmp writes the adaptive master playlist directly under /live as
+	// <stream_key>.m3u8; the per-quality playlists live in <stream_key>_*/.
+	return publicURL(fmt.Sprintf("live/%s.m3u8", streamKey))
 }
 
 // HLSVodURL returns the public HTTP URL for the VOD HLS manifest.

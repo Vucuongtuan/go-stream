@@ -1,16 +1,16 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Card, Button } from "@/components/ui";
+import { ArrowRight, ChevronLeft, ChevronRight, Eye, Play, Radio } from "lucide-react";
+import { Card } from "@/components/ui";
 import type { Room } from "@/services/rooms.service";
 
 const GRADIENTS = [
-  "from-purple-650 to-zinc-950",
-  "from-rose-650 to-zinc-950",
-  "from-cyan-650 to-slate-950",
-  "from-amber-650 to-zinc-900",
-  "from-violet-650 to-zinc-950",
+  "from-violet-950 via-zinc-950 to-zinc-900",
+  "from-rose-950 via-zinc-950 to-zinc-900",
+  "from-cyan-950 via-zinc-950 to-zinc-900",
+  "from-amber-950 via-zinc-950 to-zinc-900",
 ];
 
 interface FeaturedCarouselProps {
@@ -22,90 +22,76 @@ export function FeaturedCarousel({ rooms = [] }: FeaturedCarouselProps) {
   const [isAutoPlay, setIsAutoPlay] = useState(true);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
-  const validRooms = React.useMemo(
-    () => (Array.isArray(rooms) ? rooms : []).filter(Boolean),
-    [rooms]
-  );
+  const validRooms = useMemo(() => (Array.isArray(rooms) ? rooms : []).filter(Boolean), [rooms]);
 
   useEffect(() => {
-    setActiveIndex(0);
-  }, [validRooms.length]);
-
-  // Auto play rotation (only active if mouse is not hovering and video is not playing / we want rotation)
-  useEffect(() => {
-    if (!isAutoPlay || validRooms.length === 0) return;
+    if (!isAutoPlay || validRooms.length < 2) return;
     const interval = setInterval(() => {
-      setActiveIndex((prev) => (prev + 1) % validRooms.length);
-    }, 10000); // 10s per slide for better video viewing experience
+      setActiveIndex((current) => (current + 1) % validRooms.length);
+    }, 9000);
     return () => clearInterval(interval);
   }, [isAutoPlay, validRooms.length]);
 
   const safeIndex = activeIndex < validRooms.length ? activeIndex : 0;
   const activeRoom = validRooms[safeIndex];
 
-  // Load HLS Live Stream for the active slide video (Muted Autoplay like Twitch)
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !activeRoom || !activeRoom.playback_url) return;
+    const source = activeRoom?.playback_url;
+    if (!video || !source) return;
 
-    let hls: any;
+    let hls: { destroy: () => void } | undefined;
+    let disposed = false;
 
     import("hls.js").then(({ default: Hls }) => {
-      if (Hls.isSupported()) {
-        hls = new Hls({
-          maxBufferSize: 0,
-          maxBufferLength: 4,
-          liveSyncDuration: 2,
-          enableWorker: true
-        });
-        hls.loadSource(activeRoom.playback_url!);
-        hls.attachMedia(video);
-        
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          video.play().catch((err) => {
-            console.log("Autoplay carousel video prevented:", err);
-          });
-        });
+      if (disposed) return;
 
-        hls.on(Hls.Events.ERROR, function (event: any, data: any) {
-          if (data.fatal) {
-            switch (data.type) {
-              case Hls.ErrorTypes.NETWORK_ERROR:
-                hls.startLoad();
-                break;
-              case Hls.ErrorTypes.MEDIA_ERROR:
-                hls.recoverMediaError();
-                break;
-              default:
-                hls.destroy();
-                break;
-            }
+      if (Hls.isSupported()) {
+        const player = new Hls({
+          maxBufferLength: 30,
+          liveSyncDurationCount: 3,
+          liveMaxLatencyDurationCount: 6,
+          backBufferLength: 30,
+          fragLoadingMaxRetry: 6,
+          enableWorker: true,
+        });
+        hls = player;
+        player.loadSource(source);
+        player.attachMedia(video);
+        player.on(Hls.Events.MANIFEST_PARSED, () => {
+          void video.play().catch(() => undefined);
+        });
+        player.on(Hls.Events.ERROR, (_event, data) => {
+          if (!data.fatal) return;
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            player.startLoad();
+          } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+            player.recoverMediaError();
+          } else {
+            player.loadSource(source);
+            player.startLoad();
           }
         });
       } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        video.src = activeRoom.playback_url!;
-        video.addEventListener("loadedmetadata", () => {
-          video.play().catch((err) => {
-            console.log("Autoplay carousel video prevented:", err);
-          });
-        });
+        video.src = source;
+        video.onloadedmetadata = () => {
+          void video.play().catch(() => undefined);
+        };
       }
     });
 
     return () => {
-      if (hls) {
-        hls.destroy();
-      }
+      disposed = true;
+      hls?.destroy();
+      video.removeAttribute("src");
+      video.load();
     };
   }, [activeRoom?.playback_url]);
 
   if (validRooms.length === 0) {
     return (
-      <Card variant="glass" padding="lg" className="flex items-center justify-center min-h-[220px]">
-        <div className="text-center text-zinc-500 space-y-3">
-          <span className="text-4xl animate-bounce inline-block">📡</span>
-          <p className="text-sm font-bold tracking-wide">Chưa có stream nào đang phát trực tiếp.</p>
-        </div>
+      <Card variant="glass" padding="lg" className="flex min-h-56 items-center justify-center">
+        <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Chưa có stream nào đang phát trực tiếp.</p>
       </Card>
     );
   }
@@ -113,195 +99,132 @@ export function FeaturedCarousel({ rooms = [] }: FeaturedCarouselProps) {
   if (!activeRoom) return null;
 
   const gradient = GRADIENTS[safeIndex % GRADIENTS.length];
-  const formatViewers = (count: number) =>
-    count >= 1000 ? `${(count / 1000).toFixed(1)}K` : count.toString();
+  const viewerLabel = activeRoom.viewer_count >= 1000
+    ? `${(activeRoom.viewer_count / 1000).toFixed(1)}K`
+    : activeRoom.viewer_count.toString();
+  const selectSlide = (index: number) => {
+    setActiveIndex(index);
+    setIsAutoPlay(false);
+  };
 
   return (
-    <Card
-      variant="glass"
-      padding="sm"
-      hoverEffect={false}
-      className="flex flex-col lg:flex-row gap-5 w-full overflow-hidden transition-all duration-300 z-10"
+    <section
+      className="overflow-hidden rounded-[2rem] border border-white/10 bg-zinc-950 shadow-[0_32px_100px_rgba(0,0,0,0.35)]"
       onMouseEnter={() => setIsAutoPlay(false)}
       onMouseLeave={() => setIsAutoPlay(true)}
+      aria-label="Kênh nổi bật"
     >
-      {/* LEFT SIDE: Big Player / Active Stream Showcase */}
-      <div className="flex-1 flex flex-col gap-4">
-        <Link href={`/live/${activeRoom.host?.slug}`} className="block">
-          <div className="relative aspect-video w-full rounded-xl overflow-hidden bg-zinc-950 border border-white/5 dark:border-white/5 group cursor-pointer shadow-2xl">
-            {/* Live Autoplay Video Element */}
-            {activeRoom.playback_url ? (
-              <video
-                ref={videoRef}
-                autoPlay
-                muted
-                playsInline
-                className="absolute inset-0 w-full h-full object-cover opacity-85 group-hover:opacity-100 transition-opacity duration-300 bg-black"
-              />
-            ) : activeRoom.thumbnail ? (
-              <img
-                src={activeRoom.thumbnail}
-                alt={activeRoom.title}
-                className="absolute inset-0 w-full h-full object-cover opacity-80 group-hover:opacity-95 transition-opacity duration-500"
-              />
-            ) : (
-              <div className={`absolute inset-0 bg-gradient-to-tr ${gradient} opacity-50 group-hover:opacity-65 transition-opacity duration-500`} />
-            )}
-
-            {/* Dark gradient cover overlay */}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/25 pointer-events-none" />
-
-            {/* Play overlay button on hover */}
-            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-              <div className="relative z-10 flex h-14 w-14 items-center justify-center rounded-full bg-neon-primary text-white group-hover:scale-105 transition-all duration-300 shadow-xl shadow-neon-primary/30">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5 ml-0.5">
-                  <path d="M8 5.14v14l11-7-11-7z" />
-                </svg>
-              </div>
-            </div>
-
-            {/* Live Badge */}
-            <div className="absolute top-4 left-4 flex items-center gap-1.5 rounded-full bg-rose-650 px-3.5 py-1.5 text-[9px] font-black tracking-wider text-white shadow-md shadow-rose-650/30">
-              <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
-              ĐANG PHÁT TRỰC TIẾP
-            </div>
-
-            {/* Viewer count */}
-            <div className="absolute bottom-4 left-4 rounded-lg bg-black/65 backdrop-blur-md px-3 py-1.5 text-xs font-bold text-zinc-200 font-mono">
-              ⚡ {formatViewers(activeRoom.viewer_count)} đang xem
-            </div>
-
-            {/* Navigation arrows (Stop propagation to prevent page redirection) */}
-            <div className="absolute right-4 bottom-4 flex items-center gap-2 z-20">
-              <button
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setActiveIndex((prev) => (prev - 1 + validRooms.length) % validRooms.length);
-                }}
-                className="p-2 rounded-lg bg-black/65 hover:bg-neon-primary text-white transition-all cursor-pointer shadow-md hover:scale-105 active:scale-95"
-                aria-label="Previous stream"
-              >
-                &larr;
-              </button>
-              <button
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setActiveIndex((prev) => (prev + 1) % validRooms.length);
-                }}
-                className="p-2 rounded-lg bg-black/65 hover:bg-neon-primary text-white transition-all cursor-pointer shadow-md hover:scale-105 active:scale-95"
-                aria-label="Next stream"
-              >
-                &rarr;
-              </button>
-            </div>
-          </div>
+      <div className="relative isolate aspect-[16/10] min-h-[28rem] overflow-hidden sm:aspect-[16/8] sm:min-h-0">
+        <Link href={`/live/${activeRoom.host?.slug}`} className="absolute inset-0 z-0 block" aria-label={`Xem ${activeRoom.title}`}>
+          {activeRoom.playback_url ? (
+            <video
+              ref={videoRef}
+              autoPlay
+              muted
+              playsInline
+              className="h-full w-full scale-[1.01] object-cover opacity-80 transition duration-700 group-hover:scale-105"
+            />
+          ) : activeRoom.thumbnail ? (
+            <img
+              src={activeRoom.thumbnail}
+              alt={activeRoom.title}
+              className="h-full w-full object-cover opacity-80 transition duration-700 hover:scale-105"
+            />
+          ) : (
+            <div className={`h-full w-full bg-gradient-to-br ${gradient}`} />
+          )}
         </Link>
 
-        {/* Active Stream Info */}
-        <div className="flex gap-4 px-2 text-left">
-          {/* Streamer Avatar */}
-          <div className="h-12 w-12 rounded-full shrink-0 bg-zinc-900 border border-zinc-800 flex items-center justify-center text-neon-accent font-black text-md uppercase overflow-hidden ring-2 ring-neon-primary/20">
-            {activeRoom.host?.avatar ? (
-              <img src={activeRoom.host.avatar} alt={activeRoom.host.name} className="w-full h-full object-cover" />
-            ) : (
-              activeRoom.host?.name?.charAt(0) ?? "?"
-            )}
-          </div>
-          
-          <div className="space-y-1.5 flex-1 min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-extrabold text-neon-primary uppercase tracking-wider">
-                {activeRoom.host?.name}
-              </span>
-              {activeRoom.category && (
-                <>
-                  <span className="h-1.5 w-1.5 rounded-full bg-zinc-350 dark:bg-zinc-800" />
-                  <span className="inline-flex items-center rounded-md bg-neon-primary/5 dark:bg-neon-primary/10 border border-neon-primary/10 px-2 py-0.5 text-[9px] font-black text-neon-primary uppercase tracking-wider">
-                    {activeRoom.category.name}
-                  </span>
-                </>
-              )}
-            </div>
-            <h2 className="text-md sm:text-lg font-bold tracking-tight text-zinc-900 dark:text-white line-clamp-2 leading-snug">
-              {activeRoom.title}
-            </h2>
-            {activeRoom.description && (
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2 pt-0.5 font-medium leading-relaxed">
-                {activeRoom.description}
-              </p>
-            )}
-          </div>
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(9,9,11,0.9)_0%,rgba(9,9,11,0.42)_48%,rgba(9,9,11,0.12)_100%)]" />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-zinc-950 via-transparent to-black/25" />
 
-          <div className="shrink-0 hidden sm:flex items-center">
-            <Link href={`/live/${activeRoom.host?.slug}`}>
-              <Button variant="glow" size="md">
-                Xem ngay
-              </Button>
+        <div className="absolute left-5 top-5 flex items-center gap-2 sm:left-7 sm:top-7">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-500 px-3 py-1.5 text-[10px] font-black tracking-[0.16em] text-white shadow-[0_0_20px_rgba(244,63,94,0.45)]">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" /> LIVE
+          </span>
+          {activeRoom.category && (
+            <span className="hidden items-center gap-1.5 rounded-full border border-white/10 bg-black/35 px-3 py-1.5 text-[10px] font-semibold text-zinc-100 backdrop-blur-md sm:inline-flex">
+              <Radio className="h-3 w-3" /> {activeRoom.category.name}
+            </span>
+          )}
+        </div>
+
+        <div className="absolute bottom-7 left-5 right-5 max-w-3xl text-left sm:bottom-9 sm:left-8 sm:right-auto">
+          <Link href={`/live/${activeRoom.host?.slug}`} className="group block">
+            <div className="mb-3 flex items-center gap-2 text-xs font-semibold text-zinc-200">
+              <span className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-white/20 bg-white/10 text-sm font-black text-white backdrop-blur-md">
+                {activeRoom.host?.avatar ? (
+                  <img src={activeRoom.host.avatar} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  activeRoom.host?.name?.charAt(0) ?? "?"
+                )}
+              </span>
+              {activeRoom.host?.name ?? "Streamer"}
+            </div>
+            <h1 className="line-clamp-2 max-w-3xl text-3xl font-black leading-[0.96] tracking-[-0.045em] text-white transition-colors group-hover:text-neon-primary sm:text-5xl lg:text-6xl">
+              {activeRoom.title}
+            </h1>
+          </Link>
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            <Link
+              href={`/live/${activeRoom.host?.slug}`}
+              className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-zinc-950 transition hover:-translate-y-0.5 hover:bg-neon-primary hover:text-white"
+            >
+              Xem trực tiếp <ArrowRight className="h-4 w-4" />
             </Link>
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-200">
+              <Eye className="h-4 w-4" /> {viewerLabel} đang xem
+            </span>
           </div>
+        </div>
+
+        <div className="absolute bottom-7 right-5 z-10 flex items-center gap-2 sm:bottom-9 sm:right-8">
+          <button
+            type="button"
+            onClick={() => selectSlide((safeIndex - 1 + validRooms.length) % validRooms.length)}
+            aria-label="Kênh nổi bật trước"
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-black/30 text-white backdrop-blur-md transition hover:bg-white hover:text-zinc-950"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => selectSlide((safeIndex + 1) % validRooms.length)}
+            aria-label="Kênh nổi bật tiếp theo"
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-black/30 text-white backdrop-blur-md transition hover:bg-white hover:text-zinc-950"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
         </div>
       </div>
 
-      {/* RIGHT SIDE: Mini-Playlist Sidebar */}
-      <div className="w-full lg:w-[320px] flex flex-col gap-2 border-t lg:border-t-0 lg:border-l border-zinc-200/60 dark:border-zinc-900/40 pt-4 lg:pt-0 lg:pl-4">
-        <div className="px-2 pb-2 text-left">
-          <span className="text-[10px] font-black text-zinc-400 dark:text-zinc-500 tracking-widest uppercase">
-            KÊNH NỔI BẬT HÔM NAY ({validRooms.length})
-          </span>
-        </div>
-
-        <div className="flex flex-row lg:flex-col gap-2 overflow-x-auto lg:overflow-x-visible lg:overflow-y-auto max-h-[460px] pb-2 scrollbar-thin scrollbar-thumb-zinc-200 dark:scrollbar-thumb-zinc-900 scrollbar-track-transparent">
+      {validRooms.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto border-t border-white/5 bg-zinc-950 p-3 scrollbar-none sm:p-4">
           {validRooms.map((room, index) => {
-            const isActive = index === activeIndex;
-            const g = GRADIENTS[index % GRADIENTS.length];
+            const isActive = index === safeIndex;
             return (
               <button
                 key={room.id}
-                onClick={(e) => {
-                  e.preventDefault();
-                  setActiveIndex(index);
-                  setIsAutoPlay(false);
-                }}
-                className={`flex items-center text-left gap-3.5 p-2 rounded-xl transition-all duration-300 shrink-0 w-[240px] lg:w-full select-none cursor-pointer border ${
-                  isActive
-                    ? "bg-neon-primary/5 dark:bg-neon-primary/10 border-neon-primary/20 dark:border-neon-primary/20 shadow-sm"
-                    : "border-transparent bg-transparent hover:bg-zinc-100/40 dark:hover:bg-zinc-900/30"
+                type="button"
+                onClick={() => selectSlide(index)}
+                className={`group flex min-w-[11rem] flex-1 items-center gap-3 rounded-xl border p-2 text-left transition sm:min-w-0 ${
+                  isActive ? "border-neon-primary/45 bg-neon-primary/10" : "border-transparent bg-white/[0.025] hover:bg-white/[0.06]"
                 }`}
               >
-                {/* Mini Preview */}
-                <div className="relative aspect-video w-20 rounded-lg overflow-hidden bg-zinc-950 shrink-0 border border-zinc-200 dark:border-zinc-800">
-                  {room.thumbnail ? (
-                    <img src={room.thumbnail} alt={room.title} className="absolute inset-0 w-full h-full object-cover" />
-                  ) : (
-                    <div className={`absolute inset-0 bg-gradient-to-tr ${g} opacity-50`} />
-                  )}
-                  {isActive && (
-                    <div className="absolute inset-0 bg-neon-primary/10 flex items-center justify-center">
-                      <div className="h-2 w-2 rounded-full bg-neon-primary animate-ping" />
-                    </div>
-                  )}
+                <div className={`relative h-12 w-20 shrink-0 overflow-hidden rounded-lg bg-gradient-to-br ${GRADIENTS[index % GRADIENTS.length]}`}>
+                  {room.thumbnail && <img src={room.thumbnail} alt="" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />}
+                  {isActive && <div className="absolute inset-0 flex items-center justify-center bg-black/25"><Play className="h-4 w-4 fill-white text-white" /></div>}
                 </div>
-
-                {/* Stream brief metadata */}
-                <div className="flex-1 min-w-0 flex flex-col justify-center">
-                  <span className={`text-[10px] font-extrabold truncate ${isActive ? "text-neon-primary" : "text-zinc-500"}`}>
-                    {room.host?.name}
-                  </span>
-                  <h4 className={`text-xs font-bold truncate leading-snug mt-0.5 ${isActive ? "text-zinc-900 dark:text-white" : "text-zinc-700 dark:text-zinc-300"}`}>
-                    {room.title}
-                  </h4>
-                  <span className="text-[9px] text-zinc-450 dark:text-zinc-550 truncate mt-1 font-mono">
-                    {room.category?.name ?? "Livestream"} · {formatViewers(room.viewer_count)} viewers
-                  </span>
+                <div className="min-w-0">
+                  <p className={`truncate text-[11px] font-bold ${isActive ? "text-neon-primary" : "text-zinc-400"}`}>{room.host?.name ?? "Streamer"}</p>
+                  <p className="mt-0.5 line-clamp-2 text-xs font-semibold leading-snug text-zinc-100">{room.title}</p>
                 </div>
               </button>
             );
           })}
         </div>
-      </div>
-    </Card>
+      )}
+    </section>
   );
 }
 

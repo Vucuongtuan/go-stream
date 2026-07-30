@@ -8,14 +8,21 @@ import {
   HttpStatus,
   Inject,
   OnModuleInit,
+  ParseIntPipe,
+  Req,
 } from '@nestjs/common';
 import { ClientGrpc } from '@nestjs/microservices';
-import { FastifyReply } from 'fastify';
+import { FastifyReply, FastifyRequest } from 'fastify';
 import { v4 as uuidv4 } from 'uuid';
 import { Observable, lastValueFrom } from 'rxjs';
 import { ChatService } from './chat.service';
 import { KafkaProducerService } from '../kafka/kafka-producer.service';
 import { SendMessageDto, ChatMessage } from './chat.types';
+import { authenticatedUserID } from './auth';
+
+const CHAT_HEARTBEAT_MS = 25_000;
+const MAX_CHAT_MESSAGE_LENGTH = 500;
+const CHAT_INSTANCE_ID = process.env.CHAT_INSTANCE_ID || process.env.HOSTNAME || 'chat-service';
 
 interface ModerationGrpcService {
   isUserMuted(data: { roomId: number; userId: number }): Observable<{ isMuted: boolean; reason: string }>;
@@ -44,6 +51,7 @@ export class ChatController implements OnModuleInit {
     @Param('roomId', ParseIntPipe) roomId: number,
     @Res() res: FastifyReply,
   ): void {
+    res.hijack();
     // SSE headers for Fastify
     res.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -53,11 +61,10 @@ export class ChatController implements OnModuleInit {
       'X-Accel-Buffering': 'no',
     });
 
-    // Send chat history immediately
-    const history = this.chatService.getHistory(roomId);
-    for (const msg of history) {
-      res.raw.write(`data: ${JSON.stringify(msg)}\n\n`);
-    }
+    // Keep intermediary proxies and mobile connections alive even when chat is idle.
+    const heartbeat = setInterval(() => {
+      if (!res.raw.destroyed && res.raw.writable) res.raw.write(': keepalive\n\n');
+    }, CHAT_HEARTBEAT_MS);
 
     // Subscribe to new messages
     const subject = this.chatService.getRoomSubject(roomId);
@@ -66,12 +73,14 @@ export class ChatController implements OnModuleInit {
         res.raw.write(`data: ${JSON.stringify(msg)}\n\n`);
       },
       complete: () => {
+        clearInterval(heartbeat);
         res.raw.end();
       },
     });
 
     // Cleanup on client disconnect
     res.raw.on('close', () => {
+      clearInterval(heartbeat);
       subscription.unsubscribe();
     });
   }
@@ -84,9 +93,21 @@ export class ChatController implements OnModuleInit {
   async sendMessage(
     @Param('roomId', ParseIntPipe) roomId: number,
     @Body() dto: SendMessageDto,
+    @Req() request: FastifyRequest,
     @Res() res: FastifyReply,
   ): Promise<void> {
-    if (!dto.content) {
+    const userID = authenticatedUserID(request);
+    if (!userID) {
+      res.status(HttpStatus.UNAUTHORIZED).send({
+        status: false,
+        statusCode: 401,
+        message: 'Invalid or expired authorization token',
+      });
+      return;
+    }
+
+    const content = typeof dto.content === 'string' ? dto.content.trim() : '';
+    if (!content) {
       res.status(HttpStatus.BAD_REQUEST).send({
         status: false,
         statusCode: 400,
@@ -94,11 +115,28 @@ export class ChatController implements OnModuleInit {
       });
       return;
     }
+    if (content.length > MAX_CHAT_MESSAGE_LENGTH) {
+      res.status(HttpStatus.BAD_REQUEST).send({
+        status: false,
+        statusCode: 400,
+        message: `Content must not exceed ${MAX_CHAT_MESSAGE_LENGTH} characters`,
+      });
+      return;
+    }
+    // Gift and system messages are generated only by trusted server-side flows.
+    if (dto.type && dto.type !== 'text') {
+      res.status(HttpStatus.BAD_REQUEST).send({
+        status: false,
+        statusCode: 400,
+        message: 'Only text chat messages can be sent through this endpoint',
+      });
+      return;
+    }
 
     // Check if user is banned or timed out in main-api via gRPC
     try {
       const response = await lastValueFrom(
-        this.moderationService.isUserMuted({ roomId, userId: dto.user_id })
+        this.moderationService.isUserMuted({ roomId, userId: userID })
       );
       if (response && response.isMuted) {
         res.status(HttpStatus.FORBIDDEN).send({
@@ -110,16 +148,22 @@ export class ChatController implements OnModuleInit {
       }
     } catch (e) {
       console.error('Failed to check mute status via gRPC:', e);
+      res.status(HttpStatus.SERVICE_UNAVAILABLE).send({
+        status: false,
+        statusCode: 503,
+        message: 'Chat moderation is temporarily unavailable',
+      });
+      return;
     }
 
     const message: ChatMessage = {
       id: uuidv4(),
       room_id: roomId,
-      user_id: dto.user_id,
+      user_id: userID,
       user_name: dto.user_name,
       avatar: dto.avatar,
-      content: dto.content,
-      type: dto.type || 'text',
+      content,
+      type: 'text',
       created_at: new Date().toISOString(),
     };
 
@@ -131,6 +175,7 @@ export class ChatController implements OnModuleInit {
       event_type: 'chat.message',
       timestamp: new Date().toISOString(),
       payload: message,
+      source: CHAT_INSTANCE_ID,
     });
 
     res.status(HttpStatus.CREATED).send({

@@ -55,8 +55,8 @@ export function EditProfileModal({
       if (avatarFile) formData.append("avatar", avatarFile);
       if (coverFile) formData.append("cover", coverFile);
 
-      const updated = await apiClient.put<Host>(
-        `/api/users/${host.id}/profile`,
+      const updated = await apiClient.put<Host & { cover_url?: string }>(
+        "/api/authors/me/profile",
         formData,
         {
           headers: {}, // let browser set multipart boundary
@@ -67,7 +67,7 @@ export function EditProfileModal({
         name: updated.name ?? name,
         bio: updated.bio ?? bio,
         avatar: updated.avatar ?? (avatarPreview || host.avatar),
-        cover_url: (updated as any).cover_url ?? (coverPreview || coverUrl || ""),
+        cover_url: updated.cover_url ?? (coverPreview || coverUrl || ""),
       });
       onClose();
     } catch (err: any) {

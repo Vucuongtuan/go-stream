@@ -39,6 +39,9 @@ func (r *roomRepository) FindAll(filter domain.RoomFilter) ([]domain.Room, error
 	if filter.Offset > 0 {
 		q = q.Offset(filter.Offset)
 	}
+	if filter.Status != nil && *filter.Status == domain.RoomStatusLive {
+		q = q.Order("started_at DESC NULLS LAST, id DESC")
+	}
 
 	return rooms, q.Find(&rooms).Error
 }
@@ -63,7 +66,10 @@ func (r *roomRepository) FindByStreamKey(key string) (*domain.Room, error) {
 
 func (r *roomRepository) FindByHostID(hostID uint) ([]domain.Room, error) {
 	var rooms []domain.Room
-	err := r.db.Preload("Tags").Where("host_id = ?", hostID).Find(&rooms).Error
+	err := r.db.Preload("Tags").
+		Where("host_id = ?", hostID).
+		Order("CASE WHEN status = 'live' THEN 0 WHEN status = 'ready' THEN 1 ELSE 2 END, updated_at DESC").
+		Find(&rooms).Error
 	return rooms, err
 }
 
@@ -72,6 +78,7 @@ func (r *roomRepository) FindByHostSlug(slug string) (*domain.Room, error) {
 	err := r.db.Preload("Host").Preload("Category").Preload("Game").Preload("Tags").
 		Joins("JOIN users ON users.id = rooms.host_id").
 		Where("users.slug = ?", slug).
+		Order("CASE WHEN rooms.status = 'live' THEN 0 WHEN rooms.status = 'ready' THEN 1 ELSE 2 END, rooms.updated_at DESC").
 		First(&room).Error
 	if err != nil {
 		return nil, err

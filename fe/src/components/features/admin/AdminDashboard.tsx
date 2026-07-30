@@ -75,7 +75,7 @@ interface Gift {
 
 function resolveMediaURL(url?: string) {
   if (!url || url.startsWith("http") || url.startsWith("data:")) return url;
-  return `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:80"}${url}`;
+  return `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}${url}`;
 }
 
 export function AdminDashboard() {
