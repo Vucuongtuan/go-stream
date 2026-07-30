@@ -71,9 +71,9 @@ export function RegisterForm({ onSuccess, redirectOnSuccess = true, onSwitchToLo
   };
 
   return (
-    <div className="space-y-6 text-left">
-      <div className="space-y-1">
-        <h2 className="text-xl font-black tracking-tight text-zinc-900 dark:text-white uppercase">
+    <div className="space-y-7 text-left">
+      <div className="space-y-2">
+        <h2 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">
           Tạo tài khoản mới
         </h2>
         <p className="text-xs text-zinc-400 dark:text-zinc-500 font-medium">
@@ -84,7 +84,7 @@ export function RegisterForm({ onSuccess, redirectOnSuccess = true, onSwitchToLo
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Error Alert Box */}
         {(error || validationError) && (
-          <div className="rounded-xl border border-red-500/10 bg-red-500/5 p-3 text-xs text-red-500 dark:text-red-400 flex items-start gap-2.5 shadow-sm shadow-red-500/5">
+          <div className="flex items-start gap-2.5 bg-red-500/5 p-3 text-xs text-red-500 dark:text-red-400">
             <svg
               xmlns="http://www.w3.org/2000/svg"
               viewBox="0 0 20 20"
@@ -115,6 +115,7 @@ export function RegisterForm({ onSuccess, redirectOnSuccess = true, onSwitchToLo
             placeholder="Nguyễn Văn A"
             inputVariant="filled"
             inputSize="md"
+            className="rounded-md shadow-none"
             error={validationError && !name ? validationError : null}
           />
 
@@ -131,6 +132,7 @@ export function RegisterForm({ onSuccess, redirectOnSuccess = true, onSwitchToLo
             placeholder="name@example.com"
             inputVariant="filled"
             inputSize="md"
+            className="rounded-md shadow-none"
             error={validationError && !email ? validationError : null}
           />
 
@@ -147,6 +149,7 @@ export function RegisterForm({ onSuccess, redirectOnSuccess = true, onSwitchToLo
             placeholder="Tối thiểu 6 ký tự"
             inputVariant="filled"
             inputSize="md"
+            className="rounded-md shadow-none"
             error={validationError && !password ? validationError : null}
           />
 
@@ -163,6 +166,7 @@ export function RegisterForm({ onSuccess, redirectOnSuccess = true, onSwitchToLo
             placeholder="Nhập lại mật khẩu"
             inputVariant="filled"
             inputSize="md"
+            className="rounded-md shadow-none"
             error={validationError && password !== confirmPassword ? validationError : null}
           />
         </div>
@@ -174,25 +178,26 @@ export function RegisterForm({ onSuccess, redirectOnSuccess = true, onSwitchToLo
             variant="primary"
             fullWidth
             size="md"
+            className="rounded-md bg-emerald-600 shadow-none hover:bg-emerald-700"
           >
             {isRegisterSuccess ? "Đang tự động đăng nhập..." : "Đăng ký tài khoản"}
           </Button>
         </div>
       </form>
 
-      <div className="text-center text-xs text-zinc-400 dark:text-zinc-500 pt-4 border-t border-zinc-100 dark:border-zinc-900/60">
+      <div className="pt-1 text-center text-xs text-zinc-400 dark:text-zinc-500">
         Bạn đã có tài khoản?{" "}
         {onSwitchToLogin ? (
           <button
             onClick={onSwitchToLogin}
-            className="font-bold text-neon-primary hover:underline transition-colors bg-transparent border-none p-0 cursor-pointer"
+            className="bg-transparent p-0 font-semibold text-emerald-600 hover:underline dark:text-emerald-400"
           >
             Đăng nhập ngay
           </button>
         ) : (
           <Link
             href="/login"
-            className="font-bold text-neon-primary hover:underline transition-colors"
+            className="font-semibold text-emerald-600 hover:underline dark:text-emerald-400"
           >
             Đăng nhập ngay
           </Link>

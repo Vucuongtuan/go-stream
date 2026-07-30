@@ -1,6 +1,6 @@
 import React from "react";
 import { Metadata } from "next";
-import { StreamerDashboard } from "@/components/features/streamer/StreamerDashboard";
+import { StreamerExperience } from "@/components/features/streamer/StreamerExperience";
 
 export const metadata: Metadata = {
   title: "Streamer Dashboard - Go-Stream",
@@ -8,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function StreamerDashboardPage() {
-  return <StreamerDashboard />;
+  return <StreamerExperience />;
 }

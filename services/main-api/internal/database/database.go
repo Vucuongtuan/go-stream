@@ -1,6 +1,9 @@
 package database
 
 import (
+	"strconv"
+	"time"
+
 	"go-stream/services/main-api/internal/config"
 	"go-stream/services/main-api/internal/domain"
 	"go-stream/services/main-api/pkg/logger"
@@ -20,7 +23,19 @@ func ConnectDB() *gorm.DB {
 
 	logger.FatalIfError(err, "Failed to connect to database")
 
-	logger.Info("Database connected successfully")
+	// GORM delegates connection management to database/sql. Explicit bounds keep
+	// multiple API replicas from exhausting PostgreSQL connections under load.
+	sqlDB, err := db.DB()
+	logger.FatalIfError(err, "Failed to access database connection pool")
+	sqlDB.SetMaxOpenConns(getPositiveIntEnv("DB_MAX_OPEN_CONNS", 25))
+	sqlDB.SetMaxIdleConns(getPositiveIntEnv("DB_MAX_IDLE_CONNS", 10))
+	sqlDB.SetConnMaxLifetime(getPositiveDurationEnv("DB_CONN_MAX_LIFETIME", 5*time.Minute))
+	sqlDB.SetConnMaxIdleTime(getPositiveDurationEnv("DB_CONN_MAX_IDLE_TIME", time.Minute))
+
+	logger.Info("Database connected successfully",
+		"max_open_conns", getPositiveIntEnv("DB_MAX_OPEN_CONNS", 25),
+		"max_idle_conns", getPositiveIntEnv("DB_MAX_IDLE_CONNS", 10),
+	)
 
 	err = db.AutoMigrate(
 		&domain.User{},
@@ -36,6 +51,7 @@ func ConnectDB() *gorm.DB {
 		&domain.RoomTag{},
 		&domain.ShortVideoTag{},
 		&domain.Wallet{},
+		&domain.DailyCheckIn{},
 		&domain.Donation{},
 		&domain.Prediction{},
 		&domain.PredictionOption{},
@@ -45,6 +61,8 @@ func ConnectDB() *gorm.DB {
 		&domain.Poll{},
 		&domain.PollOption{},
 		&domain.PollVote{},
+		&domain.Gift{},
+		&domain.OutboxEvent{},
 	)
 	logger.FatalIfError(err, "Failed to run database migration")
 
@@ -53,14 +71,37 @@ func ConnectDB() *gorm.DB {
 	if err := db.Where("status = ?", domain.AuthorStatusApproved).Find(&approvedAuthors).Error; err == nil {
 		for _, auth := range approvedAuthors {
 			db.Model(&domain.User{}).Where("id = ?", auth.UserID).Update("role", "author")
+			wallet := domain.Wallet{UserID: auth.UserID, IsActive: true}
+			if err := db.Where("user_id = ?", auth.UserID).
+				Assign(domain.Wallet{IsActive: true}).
+				FirstOrCreate(&wallet).Error; err != nil {
+				logger.Info("Failed to activate wallet for approved author", "user_id", auth.UserID, "error", err)
+			}
 		}
-		logger.Info("Self-healing: Synced user roles for approved authors")
+		logger.Info("Self-healing: Synced user roles and wallets for approved authors")
 	}
 
 	seedAdmin(db)
 	seedCategories(db)
+	seedGifts(db)
 
 	return db
+}
+
+func getPositiveIntEnv(key string, fallback int) int {
+	value, err := strconv.Atoi(config.GetEnv(key, ""))
+	if err != nil || value <= 0 {
+		return fallback
+	}
+	return value
+}
+
+func getPositiveDurationEnv(key string, fallback time.Duration) time.Duration {
+	value, err := time.ParseDuration(config.GetEnv(key, ""))
+	if err != nil || value <= 0 {
+		return fallback
+	}
+	return value
 }
 
 func seedAdmin(db *gorm.DB) {
@@ -124,10 +165,14 @@ func seedAdmin(db *gorm.DB) {
 
 func seedCategories(db *gorm.DB) {
 	defaultCategories := []domain.Category{
-		{Name: "League of Legends", Slug: "league-of-legends", Type: domain.CategoryTypeGame, Description: "Trận chiến đấu trường trực tuyến nhiều người chơi phổ biến nhất."},
-		{Name: "Just Chatting", Slug: "just-chatting", Type: domain.CategoryTypeTalk, Description: "Trò chuyện, chia sẻ và tương tác trực tiếp với khán giả của bạn."},
-		{Name: "Grand Theft Auto V", Slug: "gta-v", Type: domain.CategoryTypeGame, Description: "Hòa mình vào thế giới mở Los Santos đầy kịch tính."},
-		{Name: "Counter-Strike 2", Slug: "cs-2", Type: domain.CategoryTypeGame, Description: "Game bắn súng chiến thuật góc nhìn thứ nhất hàng đầu thế giới."},
+		{Name: "League of Legends", Slug: "league-of-legends", Type: domain.CategoryTypeGame, Icon: "/storage/media/cate-lol.png", Description: "Trận chiến đấu trường trực tuyến nhiều người chơi phổ biến nhất.", SortOrder: 1},
+		{Name: "Just Chatting", Slug: "just-chatting", Type: domain.CategoryTypeTalk, Icon: "/storage/media/cate-talk.png", Description: "Trò chuyện, chia sẻ và tương tác trực tiếp với khán giả của bạn.", SortOrder: 2},
+		{Name: "Grand Theft Auto V", Slug: "gta-v", Type: domain.CategoryTypeGame, Icon: "/storage/media/cate-gta.jpg", Description: "Hòa mình vào thế giới mở Los Santos đầy kịch tính.", SortOrder: 3},
+		{Name: "Counter-Strike 2", Slug: "cs-2", Type: domain.CategoryTypeGame, Icon: "/storage/media/cate-cs2.jpg", Description: "Game bắn súng chiến thuật góc nhìn thứ nhất hàng đầu thế giới.", SortOrder: 4},
+		{Name: "Minecraft", Slug: "minecraft", Type: domain.CategoryTypeGame, Icon: "/storage/media/cate-minecraft.jpg", Description: "Khám phá, sáng tạo và sinh tồn trong thế giới khối vuông bất tận.", SortOrder: 5},
+		{Name: "EA Sports FC", Slug: "ea-sports-fc", Type: domain.CategoryTypeGame, Icon: "/storage/media/cate-fc.png", Description: "Những trận cầu đỉnh cao cùng EA Sports FC.", SortOrder: 6},
+		{Name: "FIFA Online 4", Slug: "fifa-online-4", Type: domain.CategoryTypeGame, Icon: "/storage/media/cate-fo4.jpg", Description: "Thi đấu và xây dựng đội bóng trong FIFA Online 4.", SortOrder: 7},
+		{Name: "PUBG: BATTLEGROUNDS", Slug: "pubg-battlegrounds", Type: domain.CategoryTypeGame, Icon: "/storage/media/cate-pubg.jpg", Description: "Sinh tồn đến cuối cùng trên chiến trường PUBG.", SortOrder: 8},
 	}
 
 	for _, cat := range defaultCategories {
@@ -138,6 +183,32 @@ func seedCategories(db *gorm.DB) {
 				logger.Info("Failed to seed category", "name", cat.Name, "error", err)
 			} else {
 				logger.Info("Category successfully seeded", "name", cat.Name)
+			}
+		} else if err := db.Model(&existing).Updates(map[string]interface{}{
+			"icon":       cat.Icon,
+			"sort_order": cat.SortOrder,
+		}).Error; err != nil {
+			logger.Info("Failed to update seeded category", "name", cat.Name, "error", err)
+		}
+	}
+}
+
+func seedGifts(db *gorm.DB) {
+	defaultGifts := []domain.Gift{
+		{ID: 1, Name: "Base", CoinPrice: 20, ImageURL: "http://localhost:3000/storage/gift/base.png"},
+		{ID: 2, Name: "Chest", CoinPrice: 50, ImageURL: "http://localhost:3000/storage/gift/chest.png"},
+		{ID: 3, Name: "Rocket", CoinPrice: 100, ImageURL: "http://localhost:3000/storage/gift/rocket.png"},
+		{ID: 4, Name: "Castle", CoinPrice: 200, ImageURL: "http://localhost:3000/storage/gift/castle.png"},
+		{ID: 5, Name: "Crown", CoinPrice: 500, ImageURL: "http://localhost:3000/storage/gift/crown.png"},
+	}
+
+	for _, gift := range defaultGifts {
+		var existing domain.Gift
+		if err := db.First(&existing, gift.ID).Error; err != nil {
+			if err := db.Create(&gift).Error; err != nil {
+				logger.Info("Failed to seed gift", "name", gift.Name, "error", err)
+			} else {
+				logger.Info("Gift successfully seeded", "name", gift.Name)
 			}
 		}
 	}

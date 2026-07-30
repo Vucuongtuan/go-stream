@@ -107,6 +107,8 @@ services:
       STORAGE_BASE_URL: "http://localhost/storage"
       JWT_SECRET: ${JWT_SECRET:-Y3mQpL8vN2xKf7RtB4sHj9WcUaE5Dz}
       INGEST_SERVER_IP: "127.0.0.1"
+      # The RTMP Nginx container receives a dynamic Docker bridge IP.
+      INGEST_SERVER_CIDR: "172.16.0.0/12"
       REDIS_HOST: "redis"
       REDIS_PORT: "6379"
       REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
@@ -114,6 +116,12 @@ services:
       GRPC_PORT: "50051"
     volumes:
       - ./storage:/app/storage
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:3000/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
 
   # 🟢 Chat Service (NestJS)
   chat-service:
@@ -129,6 +137,14 @@ services:
       PORT: "3001"
       KAFKA_BROKERS: "kafka:29092"
       MAIN_API_GRPC_URL: "main-api:50051"
+      # Must match main-api so the chat service can verify access tokens.
+      JWT_SECRET: ${JWT_SECRET:-Y3mQpL8vN2xKf7RtB4sHj9WcUaE5Dz}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
 
   # 🟠 Notification Service (Go)
   notification-service:
@@ -142,6 +158,12 @@ services:
         condition: service_healthy
     environment:
       KAFKA_BROKERS: "kafka:29092"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:3002/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
 
   # 📈 Analytics Service (Go)
   analytics-service:
@@ -161,10 +183,31 @@ services:
       REDIS_PORT: "6379"
       REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
       KAFKA_BROKERS: "kafka:29092"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:3003/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
 
   # ============================================================
   # REVERSE PROXY & RTMP
   # ============================================================
+
+  # Media data plane: RTMP ingest + per-stream FFmpeg transcoding. It shares
+  # only the generated HLS directory with the public gateway in local mode.
+  media-ingest:
+    image: alfg/nginx-rtmp:latest
+    container_name: gostream_media_ingest
+    restart: unless-stopped
+    depends_on:
+      main-api:
+        condition: service_healthy
+    ports:
+      - "1935:1935"
+    volumes:
+      - ./media-nginx.conf:/etc/nginx/nginx.conf.template:ro
+      - ./storage:/app/storage
 
   nginx:
     image: alfg/nginx-rtmp:latest
@@ -176,7 +219,6 @@ services:
       - analytics-service
     ports:
       - "80:80"
-      - "1935:1935"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf.template:ro
       - ./storage:/app/storage

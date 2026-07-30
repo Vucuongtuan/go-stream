@@ -45,13 +45,8 @@ func (h *ChatHandler) Stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ch, history := h.hub.Subscribe(roomID)
+	ch := h.hub.Subscribe(roomID)
 	defer h.hub.Unsubscribe(roomID, ch)
-
-	// Gửi lịch sử chat ngay khi connect
-	for _, msg := range history {
-		sendSSEEvent(w, flusher, msg)
-	}
 
 	// Giữ connection, đẩy message realtime
 	for {
@@ -94,8 +89,8 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Content string                  `json:"content"`
-		Type    domain.ChatMessageType  `json:"type"`
+		Content string                 `json:"content"`
+		Type    domain.ChatMessageType `json:"type"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Content == "" {
 		response.Error(w, http.StatusBadRequest, "Content is required")

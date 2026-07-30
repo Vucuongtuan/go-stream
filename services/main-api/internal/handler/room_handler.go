@@ -19,6 +19,7 @@ func NewRoomHandler(svc domain.RoomService) *RoomHandler {
 }
 
 func (h *RoomHandler) GetLiveRooms(w http.ResponseWriter, r *http.Request) {
+	limit, offset := parseRoomPagination(r)
 	var categoryID *uint
 	if cStr := r.URL.Query().Get("category_id"); cStr != "" {
 		if c, err := strconv.ParseUint(cStr, 10, 64); err == nil {
@@ -35,12 +36,26 @@ func (h *RoomHandler) GetLiveRooms(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	rooms, err := h.svc.GetLiveRooms(categoryID, gameID)
+	rooms, err := h.svc.GetLiveRooms(categoryID, gameID, limit, offset)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	response.Success(w, http.StatusOK, rooms)
+}
+
+func parseRoomPagination(r *http.Request) (limit, offset int) {
+	limit = 50
+	if value, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && value > 0 {
+		limit = value
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if value, err := strconv.Atoi(r.URL.Query().Get("offset")); err == nil && value > 0 {
+		offset = value
+	}
+	return limit, offset
 }
 
 func (h *RoomHandler) GetRoom(w http.ResponseWriter, r *http.Request) {

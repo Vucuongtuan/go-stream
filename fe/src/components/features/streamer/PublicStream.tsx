@@ -5,8 +5,10 @@ import { MainLayout } from "@/components/layouts";
 import { useAuth } from "@/hooks/useAuth";
 import { apiClient } from "@/lib/api-client";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/authStore";
+import { resolveMediaUrl } from "@/utils/resolveMediaUrl";
 import { 
   Play, 
   Pause, 
@@ -17,7 +19,13 @@ import {
   Settings, 
   Check,
   RefreshCw,
-  Tv
+  Eye,
+  MessageCircle,
+  Radio,
+  Send,
+  Gift,
+  Coins,
+  X,
 } from "lucide-react";
 
 interface Tag {
@@ -47,7 +55,7 @@ interface Room {
   game_id?: number;
   title: string;
   description?: string;
-  status: "offline" | "live" | "ended";
+  status: "offline" | "ready" | "live" | "ended";
   visibility: "public" | "private" | "unlisted";
   playback_url?: string;
   viewer_count: number;
@@ -66,6 +74,15 @@ interface ChatMessage {
   content: string;
   type: string;
   created_at: string;
+  gift_type?: number;
+  coin?: number;
+}
+
+interface StreamGift {
+  id: number;
+  name: string;
+  coin_price: number;
+  image_url?: string;
 }
 
 interface PublicStreamProps {
@@ -74,11 +91,17 @@ interface PublicStreamProps {
 
 export function PublicStream({ slug }: PublicStreamProps) {
   const { user: currentUser, isAuthenticated } = useAuth();
-  const { openAuthModal } = useAuthStore();
+  const router = useRouter();
+  const { setCoinBalance } = useAuthStore();
   
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatSending, setChatSending] = useState(false);
+  const [isGiftPickerOpen, setIsGiftPickerOpen] = useState(false);
+  const [giftMessage, setGiftMessage] = useState("");
+  const [giftingId, setGiftingId] = useState<number | null>(null);
+  const [giftError, setGiftError] = useState<string | null>(null);
+  const [failedGiftImageIds, setFailedGiftImageIds] = useState<number[]>([]);
   const [viewerSessionId, setViewerSessionId] = useState<string>("");
 
   const sseRef = useRef<EventSource | null>(null);
@@ -109,6 +132,12 @@ export function PublicStream({ slug }: PublicStreamProps) {
     retry: 1,
   });
 
+  const { data: gifts = [] } = useQuery<StreamGift[]>({
+    queryKey: ["stream-gifts"],
+    queryFn: () => apiClient.get<StreamGift[]>("/api/gifts"),
+    staleTime: 5 * 60 * 1000,
+  });
+
   // 1.5 Load HLS live video using hls.js on client-side
   useEffect(() => {
     const video = videoRef.current;
@@ -121,10 +150,17 @@ export function PublicStream({ slug }: PublicStreamProps) {
     import("hls.js").then(({ default: Hls }) => {
       if (Hls.isSupported()) {
         hls = new Hls({
-          maxBufferSize: 0,
-          maxBufferLength: 4,
-          liveSyncDuration: 2,
-          enableWorker: true
+          // With 3-second HLS fragments, a 4-second buffer has virtually no
+          // recovery headroom. Keep three fragments behind the live edge and
+          // allow six before a latency correction.
+          maxBufferLength: 30,
+          liveSyncDurationCount: 3,
+          liveMaxLatencyDurationCount: 6,
+          backBufferLength: 30,
+          manifestLoadingMaxRetry: 4,
+          levelLoadingMaxRetry: 4,
+          fragLoadingMaxRetry: 6,
+          enableWorker: true,
         });
         hlsRef.current = hls;
 
@@ -168,7 +204,10 @@ export function PublicStream({ slug }: PublicStreamProps) {
                 hls.recoverMediaError();
                 break;
               default:
-                hls.destroy();
+                // A bad variant can occur during a rendition restart. Reload
+                // the manifest once so Hls.js can select a healthy level.
+                hls.loadSource(room.playback_url!);
+                hls.startLoad();
                 break;
             }
           }
@@ -196,7 +235,7 @@ export function PublicStream({ slug }: PublicStreamProps) {
     };
   }, [room?.playback_url, room?.status]);
 
-  // Guest limit: if not logged in and stream is live, show non-closeable login modal after 15 seconds
+  // Guest limit: if not logged in and stream is live, direct them to the login page after 15 seconds.
   useEffect(() => {
     if (isAuthenticated || !room || room.status !== "live") return;
 
@@ -209,11 +248,11 @@ export function PublicStream({ slug }: PublicStreamProps) {
           console.error("Failed to pause video:", err);
         }
       }
-      openAuthModal("login", false);
+      router.push("/login");
     }, 15000);
 
     return () => clearTimeout(timer);
-  }, [isAuthenticated, room?.status, openAuthModal]);
+  }, [isAuthenticated, room?.status, router]);
 
   // 1.2 Generate or retrieve viewer session ID
   useEffect(() => {
@@ -244,7 +283,7 @@ export function PublicStream({ slug }: PublicStreamProps) {
   useEffect(() => {
     if (!room) return;
 
-    const sseUrl = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000"}/api/rooms/${room.id}/chat/stream`;
+    const sseUrl = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost"}/api/rooms/${room.id}/chat/stream`;
     const source = new EventSource(sseUrl);
     sseRef.current = source;
 
@@ -295,13 +334,44 @@ export function PublicStream({ slug }: PublicStreamProps) {
     try {
       await apiClient.post(`/api/rooms/${room.id}/chat`, {
         content: text,
-        type: "text"
+        type: "text",
+        user_id: currentUser!.id,
+        user_name: currentUser!.name,
+        avatar: currentUser!.avatar,
       });
     } catch (err: any) {
       console.error("Lỗi gửi chat:", err);
     } finally {
       setChatSending(false);
     }
+  };
+
+  const handleSendGift = async (gift: StreamGift) => {
+    if (!room || !isAuthenticated || giftingId !== null) return;
+
+    setGiftError(null);
+    setGiftingId(gift.id);
+    try {
+      await apiClient.post(`/api/rooms/${room.id}/donate`, {
+        gift_type: gift.id,
+        message: giftMessage.trim() || `Đã gửi ${gift.name}`,
+      });
+      // The header reads this shared balance, so update it immediately after
+      // the confirmed transaction instead of waiting for a page reload.
+      const wallet = await apiClient.get<{ balance: number }>("/api/wallet/balance");
+      setCoinBalance(wallet.balance);
+      setGiftMessage("");
+      setIsGiftPickerOpen(false);
+    } catch (err) {
+      setGiftError(err instanceof Error ? err.message : "Không thể gửi quà lúc này");
+    } finally {
+      setGiftingId(null);
+    }
+  };
+
+  const getGiftImageUrl = (imageUrl?: string) => {
+    if (!imageUrl) return undefined;
+    return resolveMediaUrl(imageUrl.replace("http://localhost:3000", "http://localhost"));
   };
 
   // Custom Video Player Controls Handlers
@@ -465,15 +535,16 @@ export function PublicStream({ slug }: PublicStreamProps) {
 
   return (
     <MainLayout>
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start h-[calc(100vh-6rem)] overflow-hidden">
+      <main className="relative mx-auto w-full max-w-[1680px] overflow-x-hidden px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
+        <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_23rem] xl:gap-6">
         
         {/* LEFT COLUMN: Player & Room details (8 cols) */}
-        <div className="lg:col-span-8 flex flex-col h-full overflow-y-auto pr-1 space-y-5 pb-6 scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent">
+        <section className="min-w-0 space-y-4 lg:space-y-5">
           
           {/* Stream Player Viewport Container */}
           <div 
             ref={playerContainerRef}
-            className="relative aspect-video w-full rounded-2xl bg-black border border-white/5 overflow-hidden flex items-center justify-center shadow-2xl group/player select-none"
+            className="relative aspect-video w-full overflow-hidden rounded-[1.75rem] border border-white/10 bg-black shadow-[0_28px_80px_rgba(0,0,0,0.42)] ring-1 ring-white/[0.025] group/player select-none"
             onMouseMove={handleMouseMove}
             onMouseLeave={handleMouseLeave}
           >
@@ -506,11 +577,11 @@ export function PublicStream({ slug }: PublicStreamProps) {
                       {/* Top Bar: LIVE info */}
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <span className="flex items-center gap-1.5 rounded-full bg-rose-600 px-3 py-1 text-[9px] font-black tracking-widest text-white shadow-[0_0_10px_rgba(225,29,72,0.45)]">
+                          <span className="flex items-center gap-1.5 rounded-full bg-rose-500 px-3 py-1 text-[9px] font-black tracking-[0.16em] text-white shadow-[0_0_16px_rgba(244,63,94,0.5)]">
                             <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
                             LIVE
                           </span>
-                          <span className="text-xs font-bold text-zinc-350 drop-shadow">
+                          <span className="text-xs font-semibold text-zinc-200 drop-shadow">
                             {room.host.name}
                           </span>
                         </div>
@@ -523,8 +594,8 @@ export function PublicStream({ slug }: PublicStreamProps) {
                           >
                             <RefreshCw className="h-3.5 w-3.5" />
                           </button>
-                          <span className="rounded-lg bg-zinc-950/70 backdrop-blur-md px-2.5 py-1 text-[10px] font-bold text-zinc-350 border border-white/5 drop-shadow">
-                            👁️ {activeViewerCount}
+                          <span className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-zinc-950/70 px-2.5 py-1 text-[10px] font-bold text-zinc-200 backdrop-blur-md drop-shadow">
+                            <Eye className="h-3 w-3" /> {activeViewerCount}
                           </span>
                         </div>
                       </div>
@@ -671,16 +742,18 @@ export function PublicStream({ slug }: PublicStreamProps) {
           </div>
 
           {/* Streamer Profile and Channel details */}
-          <div className="flex gap-4 items-start rounded-3xl border border-white/5 bg-zinc-950/20 backdrop-blur-xl p-6 text-left shadow-xl relative overflow-hidden">
+          <div className="relative overflow-hidden rounded-[1.5rem] border border-white/10 bg-zinc-950/45 p-5 text-left shadow-xl backdrop-blur-xl sm:p-6">
+            <div className="pointer-events-none absolute -right-20 -top-20 h-52 w-52 rounded-full bg-neon-primary/10 blur-3xl" />
+            <div className="relative flex gap-4 items-start">
             {/* Streamer Avatar */}
-            <div className="h-12 w-12 shrink-0 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-neon-accent font-extrabold text-lg ring-2 ring-neon-accent/15 uppercase">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-neon-primary/20 bg-neon-primary/10 text-lg font-extrabold uppercase text-neon-accent ring-4 ring-neon-primary/5">
               {room.host.name.charAt(0)}
             </div>
 
             <div className="flex-1 min-w-0 space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="space-y-0.5">
-                  <h2 className="text-base font-bold text-white truncate flex items-center gap-1.5">
+                  <h2 className="flex items-center gap-1.5 truncate text-sm font-bold text-white">
                     {room.host.name}
                     {room.host.role === "admin" && (
                       <span className="text-[8px] font-bold px-1.5 py-0.2 rounded bg-red-500/10 text-red-400 uppercase tracking-wider">Admin</span>
@@ -690,13 +763,13 @@ export function PublicStream({ slug }: PublicStreamProps) {
                   <p className="text-[11px] text-zinc-455">@{slug}</p>
                 </div>
 
-                <button className="rounded-xl bg-neon-primary hover:bg-neon-primary/95 shadow-md shadow-neon-primary/10 hover:shadow-neon-primary/20 px-4 py-2 text-xs font-bold text-white transition-all cursor-pointer">
+                <button className="rounded-xl border border-neon-primary/30 bg-neon-primary px-4 py-2 text-xs font-bold text-white shadow-lg shadow-neon-primary/20 transition-all hover:-translate-y-0.5 hover:bg-neon-primary/90 hover:shadow-neon-primary/35 cursor-pointer">
                   Theo dõi
                 </button>
               </div>
 
               {/* Stream Title */}
-              <h1 className="text-lg font-bold text-white tracking-tight leading-snug pt-1">
+              <h1 className="pt-1 text-xl font-black leading-tight tracking-[-0.025em] text-white sm:text-2xl">
                 {room.title}
               </h1>
 
@@ -710,8 +783,8 @@ export function PublicStream({ slug }: PublicStreamProps) {
               {/* Tags & Categories */}
               <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-zinc-900/60">
                 {room.category && (
-                  <span className="inline-flex items-center rounded-full bg-neon-primary/5 border border-neon-primary/15 px-2.5 py-0.5 text-[10px] font-medium text-neon-primary">
-                    📂 {room.category.name}
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-neon-primary/20 bg-neon-primary/10 px-2.5 py-1 text-[10px] font-semibold text-neon-primary">
+                    <Radio className="h-3 w-3" /> {room.category.name}
                   </span>
                 )}
                 {room.tags && room.tags.map((t) => (
@@ -721,21 +794,23 @@ export function PublicStream({ slug }: PublicStreamProps) {
                 ))}
               </div>
             </div>
+            </div>
           </div>
-        </div>
+        </section>
 
         {/* RIGHT COLUMN: Live Chat Feed Sidebar (4 cols) */}
-        <div className="lg:col-span-4 flex flex-col h-full rounded-2xl border border-white/5 bg-zinc-950/20 backdrop-blur-xl overflow-hidden shadow-2xl">
+        <aside className="flex min-h-[32rem] flex-col overflow-hidden rounded-[1.5rem] border border-white/10 bg-zinc-950/55 shadow-[0_24px_64px_rgba(0,0,0,0.32)] backdrop-blur-xl xl:sticky xl:top-5 xl:h-[calc(100vh-7.5rem)] xl:min-h-0">
           {/* Chat Header */}
-          <div className="bg-zinc-950/90 border-b border-zinc-900 px-4 py-3.5 flex items-center justify-between">
+          <div className="flex items-center justify-between border-b border-white/5 bg-zinc-950/90 px-5 py-4">
             <div className="flex items-center gap-2">
-              <span className="flex h-1.5 w-1.5 rounded-full bg-rose-500 animate-ping" />
-              <h3 className="text-xs font-bold text-white uppercase tracking-wider">Trò chuyện trực tiếp</h3>
+              <span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" /><span className="relative inline-flex h-2 w-2 rounded-full bg-rose-500" /></span>
+              <h3 className="text-xs font-bold tracking-wide text-white">Trò chuyện trực tiếp</h3>
             </div>
+            <MessageCircle className="h-4 w-4 text-zinc-500" />
           </div>
 
           {/* Chat message listing */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3.5 scrollbar-thin scrollbar-thumb-zinc-850 scrollbar-track-transparent">
+          <div className="flex-1 space-y-3 overflow-y-auto p-4 scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent">
             {chatMessages.map((msg) => {
               const isSystem = msg.user_id === 0;
               const isHost = msg.user_id === room.host_id;
@@ -750,8 +825,14 @@ export function PublicStream({ slug }: PublicStreamProps) {
                       )}
                     </div>
                   )}
-                  <div className={`text-xs ${isSystem ? "bg-zinc-900/40 px-3 py-1 rounded-full text-zinc-450" : "text-zinc-350 bg-zinc-900/10 p-2.5 rounded-xl border border-white/5"}`}>
-                    {msg.content}
+                  <div className={`text-xs leading-relaxed ${isSystem ? "rounded-full bg-zinc-900/40 px-3 py-1 text-zinc-450" : "rounded-2xl rounded-tl-sm border border-white/5 bg-white/[0.035] p-2.5 text-zinc-300"}`}>
+                    {msg.type === "gift" ? (
+                      <span className="inline-flex flex-wrap items-center gap-1.5 text-amber-200">
+                        <Gift className="h-3.5 w-3.5 text-amber-400" />
+                        {msg.content || "Đã gửi một món quà"}
+                        {msg.coin ? <span className="font-semibold text-amber-400">{msg.coin} xu</span> : null}
+                      </span>
+                    ) : msg.content}
                   </div>
                 </div>
               );
@@ -761,25 +842,55 @@ export function PublicStream({ slug }: PublicStreamProps) {
 
           {/* Chat input form */}
           {isAuthenticated ? (
-            <form onSubmit={handleSendChat} className="p-3 bg-zinc-950/80 border-t border-zinc-900 flex gap-2">
-              <input
-                type="text"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Gửi tin nhắn chat..."
-                className="flex-1 bg-zinc-900 border border-zinc-850 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-neon-primary focus:ring-1 focus:ring-neon-primary/30"
-                disabled={chatSending}
-              />
-              <button
-                type="submit"
-                disabled={chatSending}
-                className="bg-neon-primary hover:bg-neon-primary/95 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-md shadow-neon-primary/10"
-              >
-                Gửi
-              </button>
-            </form>
+            <div className="border-t border-white/5 bg-zinc-950/90">
+              {isGiftPickerOpen && (
+                <div className="border-b border-white/5 bg-zinc-900/60 p-3">
+                  <div className="mb-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-xs font-bold text-white"><Gift className="h-4 w-4 text-amber-400" />Gửi quà cho streamer</div>
+                    <button type="button" onClick={() => setIsGiftPickerOpen(false)} className="rounded-md p-1 text-zinc-500 transition hover:bg-white/5 hover:text-white" aria-label="Đóng bảng quà"><X className="h-4 w-4" /></button>
+                  </div>
+                  <input
+                    value={giftMessage}
+                    onChange={(e) => setGiftMessage(e.target.value)}
+                    maxLength={180}
+                    placeholder="Lời nhắn kèm quà (không bắt buộc)"
+                    className="mb-2 w-full rounded-lg border border-white/10 bg-zinc-950 px-3 py-2 text-[11px] text-white outline-none placeholder:text-zinc-600 focus:border-amber-400/60"
+                  />
+                  {giftError ? <p className="mb-2 text-[11px] text-rose-400">{giftError}</p> : null}
+                  <div className="grid grid-cols-3 gap-2">
+                    {gifts.map((gift) => (
+                      <button
+                        key={gift.id}
+                        type="button"
+                        onClick={() => void handleSendGift(gift)}
+                        disabled={giftingId !== null}
+                        className="group flex min-h-20 flex-col items-center justify-center rounded-xl border border-white/10 bg-zinc-950/80 p-2 text-center transition hover:border-amber-400/60 hover:bg-amber-400/10 disabled:cursor-wait disabled:opacity-60"
+                      >
+                        {getGiftImageUrl(gift.image_url) && !failedGiftImageIds.includes(gift.id) ? (
+                          <img src={getGiftImageUrl(gift.image_url)} alt="" onError={() => setFailedGiftImageIds((ids) => [...ids, gift.id])} className="mb-1 h-8 w-8 object-contain" />
+                        ) : <Gift className="mb-1 h-5 w-5 text-amber-400" />}
+                        <span className="max-w-full truncate text-[10px] font-semibold text-zinc-200">{giftingId === gift.id ? "Đang gửi..." : gift.name}</span>
+                        <span className="mt-0.5 inline-flex items-center gap-0.5 text-[9px] font-bold text-amber-400"><Coins className="h-2.5 w-2.5" />{gift.coin_price}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <form onSubmit={handleSendChat} className="flex gap-2 p-3">
+                <button type="button" onClick={() => { setGiftError(null); setIsGiftPickerOpen((open) => !open); }} className={`inline-flex items-center justify-center rounded-xl border px-3 text-amber-400 transition ${isGiftPickerOpen ? "border-amber-400/60 bg-amber-400/10" : "border-white/10 bg-zinc-900 hover:border-amber-400/40"}`} aria-label="Mở bảng quà tặng"><Gift className="h-4 w-4" /></button>
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  placeholder="Gửi tin nhắn chat..."
+                  className="flex-1 bg-zinc-900 border border-zinc-850 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-neon-primary focus:ring-1 focus:ring-neon-primary/30"
+                  disabled={chatSending}
+                />
+                <button type="submit" disabled={chatSending} className="inline-flex items-center justify-center rounded-xl bg-neon-primary px-3.5 py-2 text-white shadow-md shadow-neon-primary/15 transition-all hover:bg-neon-primary/90 cursor-pointer"><Send className="h-4 w-4" /></button>
+              </form>
+            </div>
           ) : (
-            <div className="p-4 bg-zinc-950/90 border-t border-zinc-900 text-center space-y-2">
+            <div className="space-y-2 border-t border-white/5 bg-zinc-950/90 p-4 text-center">
               <p className="text-[11px] text-zinc-400 font-medium">Bạn cần đăng nhập để tham gia trò chuyện</p>
               <Link
                 href="/login"
@@ -789,8 +900,9 @@ export function PublicStream({ slug }: PublicStreamProps) {
               </Link>
             </div>
           )}
+        </aside>
         </div>
-      </div>
+      </main>
     </MainLayout>
   );
 }

@@ -29,10 +29,10 @@ type Identity struct {
 	IsVerified   bool   `gorm:"default:false"   json:"is_verified"`
 
 	// Used by OAuth2 (Google, GitHub, etc.)
-	ProviderUserID  string `gorm:"size:255" json:"-"`
-	AccessToken     string `gorm:"size:2048" json:"-"`
-	RefreshToken    string `gorm:"size:2048" json:"-"`
-	TokenExpiry     *time.Time `json:"-"`
+	ProviderUserID string     `gorm:"size:255" json:"-"`
+	AccessToken    string     `gorm:"size:2048" json:"-"`
+	RefreshToken   string     `gorm:"size:2048" json:"-"`
+	TokenExpiry    *time.Time `json:"-"`
 
 	// Used by SAML / SSO
 	IDPID  string `gorm:"column:idp_id;size:255" json:"-"`
@@ -56,7 +56,9 @@ type IdentityRepository interface {
 type AuthService interface {
 	// Local auth
 	Register(name, email, password string) (*User, error)
-	Login(email, password string) (*User, string, error) // returns user, token, error
+	Login(email, password string) (*User, string, string, error) // returns user, access token, refresh token
+	Refresh(refreshToken string) (string, string, error)
+	RevokeRefresh(refreshToken string)
 
 	// OAuth2
 	LoginWithOAuth(provider IdentityProvider, providerUserID, email, name, avatar, accessToken, refreshToken string, tokenExpiry *time.Time) (*User, string, error)

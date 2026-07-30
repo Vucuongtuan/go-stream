@@ -4,7 +4,6 @@ import "./globals.css";
 
 import { AuthProvider } from "@/hooks/useAuth";
 import QueryProvider from "@/providers/QueryProvider";
-import { AuthModal } from "@/components/features/auth/AuthModal";
 import { cookies } from "next/headers";
 import ScrollToTop from "@/components/features/scrollToTap/ScrollToTop";
 
@@ -34,13 +33,13 @@ export default async function RootLayout({
   return (
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased ${theme}`}
     >
       <body className="min-h-full flex flex-col">
         <QueryProvider>
           <AuthProvider>
             {children}
-            <AuthModal />
             <ScrollToTop />
           </AuthProvider>
         </QueryProvider>
@@ -48,4 +47,3 @@ export default async function RootLayout({
     </html>
   );
 }
-

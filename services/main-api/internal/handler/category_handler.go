@@ -2,11 +2,16 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"path/filepath"
 	"strconv"
+	"strings"
+	"time"
 
 	"go-stream/services/main-api/internal/domain"
 	"go-stream/services/main-api/pkg/response"
+	"go-stream/services/main-api/pkg/storage"
 )
 
 type CategoryHandler struct {
@@ -80,13 +85,53 @@ type createCategoryRequest struct {
 }
 
 func (h *CategoryHandler) CreateCategory(w http.ResponseWriter, r *http.Request) {
-	var req createCategoryRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.Error(w, http.StatusBadRequest, "Invalid request body")
-		return
+	var name, slug, icon, description string
+	var categoryType domain.CategoryType
+
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+		if err := r.ParseMultipartForm(10 << 20); err != nil {
+			response.Error(w, http.StatusBadRequest, "Failed to parse multipart form")
+			return
+		}
+		name = r.FormValue("name")
+		slug = r.FormValue("slug")
+		categoryType = domain.CategoryType(r.FormValue("type"))
+		description = r.FormValue("description")
+
+		// Handle file upload
+		file, fileHeader, err := r.FormFile("icon")
+		if err == nil {
+			defer file.Close()
+			ext := filepath.Ext(fileHeader.Filename)
+			extLower := filepath.Clean(ext)
+			if extLower != ".png" && extLower != ".jpg" && extLower != ".jpeg" && extLower != ".gif" && extLower != ".webp" {
+				response.Error(w, http.StatusBadRequest, "Invalid image format. Allowed: PNG, JPG, JPEG, GIF, WEBP")
+				return
+			}
+			filename := fmt.Sprintf("%d_%s", time.Now().UnixNano(), fileHeader.Filename)
+			subPath := filepath.Join("media", "category", filename)
+			icon, err = storage.Save(file, subPath)
+			if err != nil {
+				response.Error(w, http.StatusInternalServerError, "Failed to save icon: "+err.Error())
+				return
+			}
+		} else {
+			icon = r.FormValue("icon")
+		}
+	} else {
+		var req createCategoryRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			response.Error(w, http.StatusBadRequest, "Invalid request body")
+			return
+		}
+		name = req.Name
+		slug = req.Slug
+		categoryType = req.Type
+		icon = req.Icon
+		description = req.Description
 	}
 
-	category, err := h.svc.CreateCategory(req.Name, req.Slug, req.Icon, req.Description, req.Type)
+	category, err := h.svc.CreateCategory(name, slug, icon, description, categoryType)
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, err.Error())
 		return
@@ -109,13 +154,53 @@ func (h *CategoryHandler) UpdateCategory(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	var req updateCategoryRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.Error(w, http.StatusBadRequest, "Invalid request body")
-		return
+	var name, slug, icon, description string
+	var categoryType domain.CategoryType
+
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+		if err := r.ParseMultipartForm(10 << 20); err != nil {
+			response.Error(w, http.StatusBadRequest, "Failed to parse multipart form")
+			return
+		}
+		name = r.FormValue("name")
+		slug = r.FormValue("slug")
+		categoryType = domain.CategoryType(r.FormValue("type"))
+		description = r.FormValue("description")
+
+		// Handle file upload
+		file, fileHeader, err := r.FormFile("icon")
+		if err == nil {
+			defer file.Close()
+			ext := filepath.Ext(fileHeader.Filename)
+			extLower := filepath.Clean(ext)
+			if extLower != ".png" && extLower != ".jpg" && extLower != ".jpeg" && extLower != ".gif" && extLower != ".webp" {
+				response.Error(w, http.StatusBadRequest, "Invalid image format. Allowed: PNG, JPG, JPEG, GIF, WEBP")
+				return
+			}
+			filename := fmt.Sprintf("%d_%s", time.Now().UnixNano(), fileHeader.Filename)
+			subPath := filepath.Join("media", "category", filename)
+			icon, err = storage.Save(file, subPath)
+			if err != nil {
+				response.Error(w, http.StatusInternalServerError, "Failed to save icon: "+err.Error())
+				return
+			}
+		} else {
+			icon = r.FormValue("icon")
+		}
+	} else {
+		var req updateCategoryRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			response.Error(w, http.StatusBadRequest, "Invalid request body")
+			return
+		}
+		name = req.Name
+		slug = req.Slug
+		categoryType = req.Type
+		icon = req.Icon
+		description = req.Description
 	}
 
-	category, err := h.svc.UpdateCategory(uint(id), req.Name, req.Slug, req.Icon, req.Description, req.Type)
+	category, err := h.svc.UpdateCategory(uint(id), name, slug, icon, description, categoryType)
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, err.Error())
 		return

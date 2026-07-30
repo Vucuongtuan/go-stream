@@ -71,6 +71,14 @@ func (r *authorRepository) UpdateStatus(id uint, status domain.AuthorStatus, app
 			if err := tx.Model(&domain.User{}).Where("id = ?", author.UserID).Update("role", "author").Error; err != nil {
 				return err
 			}
+			// An approved author can receive gifts immediately, including older
+			// accounts created before wallets were automatically provisioned.
+			wallet := domain.Wallet{UserID: author.UserID, IsActive: true}
+			if err := tx.Where("user_id = ?", author.UserID).
+				Assign(domain.Wallet{IsActive: true}).
+				FirstOrCreate(&wallet).Error; err != nil {
+				return err
+			}
 		} else if status == domain.AuthorStatusRejected || status == domain.AuthorStatusSuspended {
 			var author domain.Author
 			if err := tx.First(&author, id).Error; err != nil {

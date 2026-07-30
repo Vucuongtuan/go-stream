@@ -4,3 +4,5 @@ export * from "./auth/AuthorRegisterForm";
 export * from "./stream/FeaturedCarousel";
 export * from "./stream/StreamCard";
 export * from "./stream/CategoryCard";
+export * from "./contentRail";
+export { FeatureCard, type FeatureCardProps } from "./card";

@@ -35,6 +35,7 @@ func SetupRoutes(
 	predictionHandler *handler.PredictionHandler,
 	pollHandler *handler.PollHandler,
 	moderationHandler *handler.ModerationHandler,
+	giftHandler *handler.GiftHandler,
 	userRepo domain.UserRepository,
 ) {
 	storagePath := config.GetEnv("STORAGE_PATH", "./storage")
@@ -60,9 +61,12 @@ func SetupRoutes(
 
 	mux.HandleFunc("POST /api/auth/register", authHandler.Register)
 	mux.HandleFunc("POST /api/auth/login", authHandler.Login)
+	mux.HandleFunc("POST /api/auth/refresh", authHandler.Refresh)
+	mux.HandleFunc("POST /api/auth/logout", authHandler.Logout)
 
 	// Wallet & Donation routes
 	mux.Handle("GET /api/wallet/balance", auth(donationHandler.GetWallet))
+	mux.Handle("GET /api/wallet/check-in/status", auth(donationHandler.GetCheckInStatus))
 	mux.Handle("POST /api/wallet/check-in", auth(donationHandler.CheckIn))
 	mux.Handle("POST /api/rooms/{roomId}/donate", auth(donationHandler.Donate))
 
@@ -129,7 +133,15 @@ func SetupRoutes(
 		return middleware.AdminOnly(userRepo, h)
 	}
 	mux.Handle("POST /api/authors/apply", auth(authorHandler.Apply))
+	mux.Handle("PUT /api/authors/me/profile", auth(authorHandler.UpdateMyProfile))
 	mux.Handle("GET /api/admin/authors", admin(authorHandler.ListCandidates))
 	mux.Handle("PUT /api/admin/authors/{id}/approve", admin(authorHandler.Approve))
 	mux.Handle("PUT /api/admin/authors/{id}/reject", admin(authorHandler.Reject))
+
+	// Gift routes
+	mux.HandleFunc("GET /api/gifts", giftHandler.GetAllGifts)
+	mux.HandleFunc("GET /api/gifts/{id}", giftHandler.GetGiftByID)
+	mux.Handle("POST /api/admin/gifts", admin(giftHandler.CreateGift))
+	mux.Handle("PUT /api/admin/gifts/{id}", admin(giftHandler.UpdateGift))
+	mux.Handle("DELETE /api/admin/gifts/{id}", admin(giftHandler.DeleteGift))
 }

@@ -12,6 +12,7 @@ import { ChatDonatePanel } from "./ChatDonatePanel";
 import { StreamSchedule } from "./StreamSchedule";
 import { RestreamManager } from "./RestreamManager";
 import { AnalyticsTab } from "./AnalyticsTab";
+import { DonationOverlaySettings } from "./DonationOverlaySettings";
 
 interface Category {
   id: number;
@@ -26,7 +27,7 @@ interface Room {
   game_id?: number;
   title: string;
   description?: string;
-  status: "offline" | "live" | "ended";
+  status: "offline" | "ready" | "live" | "ended";
   visibility: "public" | "private" | "unlisted";
   playback_url?: string;
   viewer_count: number;
@@ -61,11 +62,8 @@ export function StreamerDashboard() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [rightActiveTab, setRightActiveTab] = useState<"chat" | "donate">("chat");
-  const [activeDashboardTab, setActiveDashboardTab] = useState<"control" | "settings" | "analytics" | "schedule" | "restream">("control");
-  const [donations, setDonations] = useState<Donation[]>([
-    { id: "d-1", user_name: "Nguyễn Văn A", amount: 50000, message: "Stream chất lượng quá anh ơi!", created_at: new Date(Date.now() - 300000).toISOString() },
-    { id: "d-2", user_name: "Trần Thị B", amount: 100000, message: "Chúc anh có buổi tối vui vẻ.", created_at: new Date(Date.now() - 600000).toISOString() },
-  ]);
+  const [activeDashboardTab, setActiveDashboardTab] = useState<"control" | "settings" | "alerts" | "analytics" | "schedule" | "restream">("control");
+  const [donations, setDonations] = useState<Donation[]>([]);
 
   const [scheduledStreams, setScheduledStreams] = useState([
     { id: "s-1", title: "Leo Rank Thách Đấu Hàn Cuối Tuần", date: "2026-06-13", time: "20:00", category: "League of Legends" },
@@ -179,6 +177,25 @@ export function StreamerDashboard() {
     };
   }, [isAuthenticated, user, authLoading]);
 
+  // The API marks a room live only after nginx-rtmp confirms an OBS publish.
+  // While waiting, poll the author's room so the dashboard changes state without
+  // requiring a manual refresh.
+  useEffect(() => {
+    if (!room || room.status !== "ready") return;
+
+    const interval = window.setInterval(async () => {
+      try {
+        const rooms = await apiClient.get<Room[]>("/api/rooms/me");
+        const refreshedRoom = rooms?.find((candidate) => candidate.id === room.id);
+        if (refreshedRoom) setRoom(refreshedRoom);
+      } catch {
+        // Keep waiting; a transient polling failure must not interrupt setup.
+      }
+    }, 3000);
+
+    return () => window.clearInterval(interval);
+  }, [room]);
+
   // 2. Load Camera & Screen Sources
   useEffect(() => {
     if (!isAuthenticated || user?.role !== "author") return;
@@ -247,8 +264,20 @@ export function StreamerDashboard() {
 
     source.onmessage = (event) => {
       try {
-        const msg = JSON.parse(event.data);
+        const msg = JSON.parse(event.data) as ChatMessage & { coin?: number };
         setChatMessages((prev) => [...prev.slice(-99), msg]);
+        if (msg.type === "gift") {
+          setDonations((prev) => [
+            {
+              id: msg.id,
+              user_name: msg.user_name,
+              amount: msg.coin ?? 0,
+              message: msg.content,
+              created_at: msg.created_at,
+            },
+            ...prev.filter((donation) => donation.id !== msg.id),
+          ].slice(0, 50));
+        }
       } catch (err) {
         console.error("Lỗi parse tin nhắn chat:", err);
       }
@@ -279,34 +308,6 @@ export function StreamerDashboard() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages]);
-
-  // Simulate mock donations
-  useEffect(() => {
-    if (room?.status !== "live") return;
-    
-    const names = ["Lê Hoàng", "Phạm Minh", "Hoàng Nam", "Gia Bảo", "Khánh Huyền"];
-    const messages = [
-      "Ủng hộ anh stream hay quá!",
-      "Chúc room ngày càng phát triển nha.",
-      "Game này hay thật sự, học hỏi được nhiều.",
-      "Donation nhỏ cổ vũ tinh thần!",
-      "Hôm nay stream muộn thế anh."
-    ];
-    const amounts = [10000, 20000, 50000, 100000, 200000];
-
-    const timer = setInterval(() => {
-      const newDonate = {
-        id: `d-mock-${Date.now()}`,
-        user_name: names[Math.floor(Math.random() * names.length)],
-        amount: amounts[Math.floor(Math.random() * amounts.length)],
-        message: messages[Math.floor(Math.random() * messages.length)],
-        created_at: new Date().toISOString()
-      };
-      setDonations(prev => [newDonate, ...prev].slice(0, 50));
-    }, 25000);
-
-    return () => clearInterval(timer);
-  }, [room?.status]);
 
   // 6. Canvas Studio Mixer loop
   useEffect(() => {
@@ -823,6 +824,24 @@ export function StreamerDashboard() {
                   Dừng Phát
                 </button>
               </div>
+            ) : room?.status === "ready" ? (
+              <div className="flex items-center gap-2 rounded-2xl border border-amber-500/30 bg-amber-50 p-2.5 shadow-md dark:bg-amber-950/40">
+                <span className="relative ml-1 flex h-2.5 w-2.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-500" />
+                </span>
+                <div className="flex flex-col text-left pr-2">
+                  <span className="text-[9px] font-bold uppercase text-zinc-500 dark:text-zinc-400">ĐANG CHỜ OBS</span>
+                  <span className="text-xs font-bold text-zinc-850 dark:text-white">Bắt đầu phát bằng stream key để lên sóng</span>
+                </div>
+                <button
+                  onClick={handleEndStream}
+                  disabled={actionLoading}
+                  className="rounded-xl border border-amber-500/30 bg-white px-4 py-2 text-xs font-bold text-amber-700 transition-all hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-zinc-950 dark:text-amber-300 dark:hover:bg-amber-950"
+                >
+                  Hủy chờ
+                </button>
+              </div>
             ) : (
               <button
                 onClick={handleGoLive}
@@ -857,6 +876,16 @@ export function StreamerDashboard() {
             }`}
           >
             ⚙️ Cài đặt kênh
+          </button>
+          <button
+            onClick={() => setActiveDashboardTab("alerts")}
+            className={`px-4 py-2.5 text-xs font-bold transition-all relative border-b-2 flex items-center gap-1.5 cursor-pointer shrink-0 ${
+              activeDashboardTab === "alerts"
+                ? "border-amber-400 text-amber-600 dark:text-amber-300"
+                : "border-transparent text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-white"
+            }`}
+          >
+            🎁 Donation Alert
           </button>
           <button
             onClick={() => setActiveDashboardTab("analytics")}
@@ -1130,6 +1159,12 @@ export function StreamerDashboard() {
               onSubmit={handleUpdateSettings}
               actionLoading={actionLoading}
             />
+          </div>
+        )}
+
+        {activeDashboardTab === "alerts" && (
+          <div className="mx-auto max-w-3xl">
+            <DonationOverlaySettings roomId={room?.id} />
           </div>
         )}
 

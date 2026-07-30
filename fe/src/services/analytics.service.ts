@@ -1,4 +1,6 @@
-const ANALYTICS_BASE_URL = process.env.NEXT_PUBLIC_ANALYTICS_URL || "http://localhost:3003";
+// Browser clients must go through Nginx. The analytics container is private
+// to Docker and is intentionally not published on port 3003.
+const ANALYTICS_BASE_URL = process.env.NEXT_PUBLIC_ANALYTICS_URL || "http://localhost";
 
 export interface RoomStats {
   room_id: number;
@@ -29,7 +31,7 @@ export type LeaderboardPeriod = "daily" | "weekly" | "monthly" | "yearly";
 
 async function fetchAnalytics<T>(path: string): Promise<T | null> {
   try {
-    const res = await fetch(`${ANALYTICS_BASE_URL}${path}`, { next: { revalidate: 30 } });
+    const res = await fetch(`${ANALYTICS_BASE_URL}${path}`, { cache: "no-store" });
     if (!res.ok) return null;
     return res.json() as Promise<T>;
   } catch {

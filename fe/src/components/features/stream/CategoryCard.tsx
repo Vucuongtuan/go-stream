@@ -1,15 +1,33 @@
 import React from "react";
+import Link from "next/link";
 import { Card } from "@/components/ui";
 
 interface CategoryCardProps {
   name: string;
+  imageUrl?: string;
+  href?: string;
   viewers?: string | number;
   gradient?: string;
 }
 
-export function CategoryCard({ name, viewers = 0 }: CategoryCardProps) {
-  return (
+export function CategoryCard({ name, imageUrl, href, viewers = 0 }: CategoryCardProps) {
+  const resolvedImageUrl = imageUrl?.startsWith("http")
+    ? imageUrl
+    : imageUrl
+      ? `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}${imageUrl}`
+      : undefined;
+
+  const card = (
     <Card variant="glass" padding="md" className="group cursor-pointer select-none text-left">
+      {resolvedImageUrl && (
+        <div className="-mx-5 -mt-5 mb-4 h-24 overflow-hidden border-b border-zinc-200/60 dark:border-zinc-900/60">
+          <img
+            src={resolvedImageUrl}
+            alt={`Ảnh bìa ${name}`}
+            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+          />
+        </div>
+      )}
       {/* Decorative tag */}
       <div className="flex items-center gap-1.5 mb-1.5">
         <span className="h-1.5 w-1.5 rounded-full bg-neon-primary animate-pulse" />
@@ -26,6 +44,8 @@ export function CategoryCard({ name, viewers = 0 }: CategoryCardProps) {
       </p>
     </Card>
   );
+
+  return href ? <Link href={href}>{card}</Link> : card;
 }
 
 export default CategoryCard;
