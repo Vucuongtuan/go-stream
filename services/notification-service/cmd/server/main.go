@@ -35,7 +35,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	topics := []string{"stream-events", "user-events", "chat-events"}
+	topics := []string{"stream-events", "user-events", "chat-events", "notification-events"}
 	c := consumer.NewKafkaConsumer(brokerList, "notification-service-group", topics, n)
 
 	go func() {

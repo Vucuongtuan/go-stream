@@ -38,6 +38,7 @@ func SetupRoutes(
 	giftHandler *handler.GiftHandler,
 	shortVideoHandler *handler.ShortVideoHandler,
 	authorFollowHandler *handler.AuthorFollowHandler,
+	notificationHandler *handler.NotificationHandler,
 	userRepo domain.UserRepository,
 ) {
 	storagePath := config.GetEnv("STORAGE_PATH", "./storage")
@@ -121,6 +122,10 @@ func SetupRoutes(
 	mux.Handle("POST /api/authors/{slug}/follow", auth(authorFollowHandler.Follow))
 	mux.Handle("DELETE /api/authors/{slug}/follow", auth(authorFollowHandler.Unfollow))
 	mux.Handle("GET /api/authors/{slug}/follow-status", auth(authorFollowHandler.Status))
+	mux.Handle("GET /api/authors/following", auth(authorFollowHandler.ListFollowing))
+	mux.Handle("GET /api/notifications", auth(notificationHandler.List))
+	mux.Handle("PUT /api/notifications/read-all", auth(notificationHandler.MarkAllRead))
+	mux.Handle("PUT /api/notifications/{id}/read", auth(notificationHandler.MarkRead))
 
 	mux.HandleFunc("GET /api/rooms", roomHandler.GetLiveRooms)
 	mux.HandleFunc("GET /api/rooms/{id}", roomHandler.GetRoom)

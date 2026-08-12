@@ -2,9 +2,10 @@ package kafka
 
 const (
 	// Topics
-	TopicStreamEvents = "stream-events"
-	TopicUserEvents   = "user-events"
-	TopicChatEvents   = "chat-events"
+	TopicStreamEvents       = "stream-events"
+	TopicUserEvents         = "user-events"
+	TopicChatEvents         = "chat-events"
+	TopicNotificationEvents = "notification-events"
 
 	// Stream event types
 	EventStreamStarted = "stream.started"
@@ -12,9 +13,10 @@ const (
 	EventRoomCreated   = "room.created"
 
 	// User event types
-	EventUserRegistered = "user.registered"
-	EventAuthorApproved = "author.approved"
-	EventAuthorRejected = "author.rejected"
+	EventUserRegistered      = "user.registered"
+	EventNotificationCreated = "notification.created"
+	EventAuthorApproved      = "author.approved"
+	EventAuthorRejected      = "author.rejected"
 
 	// Chat event types
 	EventChatMessage = "chat.message"

@@ -12,6 +12,15 @@ func NewAuthorFollowRepository(db *gorm.DB) domain.AuthorFollowRepository {
 	return &authorFollowRepository{db: db}
 }
 
+func (r *authorFollowRepository) ListAuthors(followerID uint, limit, offset int) ([]domain.Author, error) {
+	var authors []domain.Author
+	err := r.db.Preload("User").Preload("Categories").
+		Joins("JOIN author_follows ON author_follows.author_id = authors.id").
+		Where("author_follows.follower_id = ?", followerID).
+		Order("author_follows.created_at DESC").Limit(limit).Offset(offset).Find(&authors).Error
+	return authors, err
+}
+
 func (r *authorFollowRepository) Follow(followerID, authorID uint) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		follow := domain.AuthorFollow{FollowerID: followerID, AuthorID: authorID}

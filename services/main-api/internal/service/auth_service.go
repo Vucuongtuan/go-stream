@@ -6,7 +6,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"log/slog"
+	"net/mail"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"go-stream/services/main-api/internal/config"
 	"go-stream/services/main-api/internal/domain"
@@ -41,13 +44,46 @@ func NewAuthService(
 	}
 }
 
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
+func validateRegistrationInput(name, email, password string) error {
+	if length := utf8.RuneCountInString(name); length < 2 || length > 50 {
+		return errors.New("display name must be between 2 and 50 characters")
+	}
+	parsedEmail, err := mail.ParseAddress(email)
+	if err != nil || parsedEmail.Address != email {
+		return errors.New("invalid email address")
+	}
+	// bcrypt rejects passwords above 72 bytes. Keep this constraint explicit so
+	// the client receives a useful validation error instead of a server failure.
+	if length := len(password); length < 8 || length > 72 {
+		return errors.New("password must be between 8 and 72 characters")
+	}
+	return nil
+}
+
 func (s *authService) Register(name, email, password string) (*domain.User, error) {
+	name = strings.TrimSpace(name)
+	email = normalizeEmail(email)
+	if err := validateRegistrationInput(name, email, password); err != nil {
+		return nil, err
+	}
+
 	existing, err := s.identityRepo.FindByProviderAndEmail(domain.ProviderLocal, email)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
 	if existing != nil {
 		return nil, errors.New("email already registered")
+	}
+	// Users created by OAuth/SAML may not have a local identity. Check the user
+	// record as well so the database unique constraint never leaks to clients.
+	if existingUser, err := s.userRepo.FindByEmail(email); err == nil && existingUser != nil {
+		return nil, errors.New("email already registered")
+	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -61,6 +97,9 @@ func (s *authService) Register(name, email, password string) (*domain.User, erro
 		Slug:  utils.GenerateSlug(name),
 	}
 	if err := s.userRepo.Create(user); err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "duplicate key") {
+			return nil, errors.New("email already registered")
+		}
 		return nil, err
 	}
 
@@ -90,6 +129,11 @@ func (s *authService) Register(name, email, password string) (*domain.User, erro
 }
 
 func (s *authService) Login(email, password string) (*domain.User, string, string, error) {
+	email = normalizeEmail(email)
+	if email == "" || password == "" {
+		return nil, "", "", errors.New("invalid credentials")
+	}
+
 	identity, err := s.identityRepo.FindByProviderAndEmail(domain.ProviderLocal, email)
 	if err != nil {
 		return nil, "", "", errors.New("invalid credentials")

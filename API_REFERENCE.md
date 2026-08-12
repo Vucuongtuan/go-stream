@@ -205,12 +205,69 @@ Khi donate thành công, chat SSE gửi một message có `type: "gift"`, `coin`
 - Search type-ahead ở header: chỉ tìm khi có ít nhất 2 ký tự, debounce 300ms, hiện tối đa 3 item cho mỗi nhóm.
 - Trang kết quả đầy đủ tại `/search?q=<keyword>`.
 
-## Notification live
+## Notification inbox
 
-- Khi RTMP ingest xác nhận một room bắt đầu live, Main API publish Kafka event `stream.started` vào topic `stream-events`.
-- Notification service hiện consume event này để log; chưa có REST API, storage notification, follow graph hoặc realtime push tới browser.
-- Frontend header tạm thời poll `GET /api/rooms?status=live` mỗi 20 giây cho user đã đăng nhập. Snapshot đầu chỉ dùng làm mốc; room mới live sau đó sẽ xuất hiện trong dropdown notification của phiên trình duyệt hiện tại.
-- Cơ chế hiện tại thông báo cho mọi user đang mở web, không chỉ follower; notification mất khi refresh. Muốn production realtime cần thêm bảng follow, persistence và SSE/WebSocket hoặc push service.
+Notification được lưu bền vững theo từng user; vì vậy đổi trình duyệt, refresh trang hoặc đăng nhập lại vẫn xem được. Mọi endpoint bên dưới yêu cầu `Auth` và chỉ truy cập notification của chính access token đó.
+
+| Method | Path | Auth | Ghi chú |
+| --- | --- | --- | --- |
+| GET | `/api/notifications?limit=30&offset=0` | Auth | Lấy inbox mới nhất trước; `limit` từ 1–100, mặc định 30 |
+| PUT | `/api/notifications/{id}/read` | Auth | Đánh dấu một notification đã đọc; không thể đánh dấu notification của user khác |
+| PUT | `/api/notifications/read-all` | Auth | Đánh dấu toàn bộ inbox hiện tại đã đọc |
+
+Ví dụ lấy inbox:
+
+```bash
+curl -H "Authorization: Bearer <access_token>" \
+  'http://localhost/api/notifications?limit=30&offset=0'
+```
+
+```json
+{
+  "status": true,
+  "statusCode": 200,
+  "data": {
+    "unread_count": 2,
+    "notifications": [
+      {
+        "id": 42,
+        "user_id": 8,
+        "type": "author.followed",
+        "title": "Bạn có người theo dõi mới",
+        "body": "Minh vừa theo dõi kênh của bạn.",
+        "action_url": "/streamer/minh-streamer",
+        "data": "{\"follower_id\":15,\"author_id\":3}",
+        "created_at": "2026-07-31T10:30:00Z"
+      }
+    ]
+  }
+}
+```
+
+`read_at` có mặt khi notification đã đọc; `data` là chuỗi JSON metadata, để mobile/web dùng khi cần điều hướng sâu. Client nên hiển thị `title`, `body`, và mở `action_url` nếu có.
+
+### Các notification đang tạo tự động
+
+| Event | Người nhận | `type` | Action |
+| --- | --- | --- | --- |
+| User follow một author | Chủ kênh/author | `author.followed` | Trang kênh author |
+| User gửi hoặc gửi lại đơn quyền Streamer/live | Mọi admin | `author.application_submitted` | `/admin` |
+| Admin phê duyệt đơn Streamer/live | Người nộp đơn | `author.application_approved` | `/streamer` |
+
+Ví dụ client đánh dấu đã đọc trước khi điều hướng:
+
+```ts
+await apiClient.put(`/api/notifications/${notification.id}/read`);
+router.push(notification.action_url || "/");
+```
+
+### Tích hợp mobile/background
+
+Khi tạo inbox item, Main API ghi notification và outbox event `notification.created` cùng trong một transaction; worker sau đó publish lên Kafka topic `notification-events`. `notification-service` đã consume topic này và là điểm thay thế delivery channel.
+
+- Web hiện poll inbox mỗi 20 giây; mobile có thể poll endpoint tương tự khi app foreground.
+- Để gửi background push, triển khai `Notifier.OnNotificationCreated(...)` bằng FCM/APNs. Không tạo notification mới ở mobile service: chỉ gửi push từ payload event, còn nguồn dữ liệu/read state luôn là Main API.
+- Kafka/outbox retry và DLQ đảm bảo việc phát event không làm mất inbox item khi broker hoặc provider push tạm lỗi.
 
 ## Analytics
 

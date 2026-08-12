@@ -10,12 +10,14 @@ type AuthorFollow struct {
 }
 
 type AuthorFollowRepository interface {
+	ListAuthors(followerID uint, limit, offset int) ([]Author, error)
 	Follow(followerID, authorID uint) error
 	Unfollow(followerID, authorID uint) error
 	IsFollowing(followerID, authorID uint) (bool, error)
 }
 
 type AuthorFollowService interface {
+	GetFollowedAuthors(followerID uint, limit, offset int) ([]Author, error)
 	FollowAuthor(followerID uint, slug string) error
 	UnfollowAuthor(followerID uint, slug string) error
 	IsFollowingAuthor(followerID uint, slug string) (bool, error)

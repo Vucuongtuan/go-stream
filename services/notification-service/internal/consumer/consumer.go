@@ -40,6 +40,14 @@ type ChatPayload struct {
 	UserName string `json:"user_name"`
 	Content  string `json:"content"`
 }
+type NotificationPayload struct {
+	ID        uint   `json:"id"`
+	UserID    uint   `json:"user_id"`
+	Type      string `json:"type"`
+	Title     string `json:"title"`
+	Body      string `json:"body"`
+	ActionURL string `json:"action_url"`
+}
 
 type KafkaConsumer struct {
 	readers   []*kafka.Reader
@@ -151,6 +159,12 @@ func (c *KafkaConsumer) handleMessage(msg kafka.Message) error {
 			return err
 		}
 		return c.notifier.OnChatMessage(p.RoomID, p.UserID, p.UserName, p.Content)
+	case "notification.created":
+		var p NotificationPayload
+		if err := json.Unmarshal(event.Payload, &p); err != nil {
+			return err
+		}
+		return c.notifier.OnNotificationCreated(p.ID, p.UserID, p.Type, p.Title, p.Body, p.ActionURL)
 	default:
 		slog.Debug("Ignoring unsupported notification event", "type", event.EventType)
 		return nil

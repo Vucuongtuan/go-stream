@@ -53,3 +53,16 @@ func (h *AuthorFollowHandler) Status(w http.ResponseWriter, r *http.Request) {
 	}
 	response.Success(w, http.StatusOK, map[string]bool{"following": following})
 }
+func (h *AuthorFollowHandler) ListFollowing(w http.ResponseWriter, r *http.Request) {
+	userID, ok := followUserID(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+	authors, err := h.svc.GetFollowedAuthors(userID, 50, 0)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "Unable to load followed channels")
+		return
+	}
+	response.Success(w, http.StatusOK, authors)
+}
