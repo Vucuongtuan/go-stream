@@ -41,6 +41,7 @@ func ConnectDB() *gorm.DB {
 		&domain.User{},
 		&domain.Identity{},
 		&domain.Author{},
+		&domain.AuthorFollow{},
 		&domain.SocialLink{},
 		&domain.Category{},
 		&domain.Game{},
@@ -62,6 +63,7 @@ func ConnectDB() *gorm.DB {
 		&domain.PollOption{},
 		&domain.PollVote{},
 		&domain.Gift{},
+		&domain.Notification{},
 		&domain.OutboxEvent{},
 	)
 	logger.FatalIfError(err, "Failed to run database migration")

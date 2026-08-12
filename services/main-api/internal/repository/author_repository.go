@@ -46,6 +46,18 @@ func (r *authorRepository) FindByUserID(userID uint) (*domain.Author, error) {
 	return &author, nil
 }
 
+func (r *authorRepository) FindByUserSlug(slug string) (*domain.Author, error) {
+	var author domain.Author
+	err := r.db.Preload("User").Preload("Categories").
+		Joins("JOIN users ON users.id = authors.user_id").
+		Where("users.slug = ?", slug).
+		First(&author).Error
+	if err != nil {
+		return nil, err
+	}
+	return &author, nil
+}
+
 func (r *authorRepository) Create(author *domain.Author) error {
 	return r.db.Create(author).Error
 }

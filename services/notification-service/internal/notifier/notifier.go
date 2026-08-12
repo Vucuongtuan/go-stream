@@ -8,4 +8,5 @@ type Notifier interface {
 	OnUserRegistered(userID uint, name, email string) error
 	OnAuthorApproved(userID uint, name string) error
 	OnChatMessage(roomID, userID uint, userName, content string) error
+	OnNotificationCreated(notificationID, userID uint, notificationType, title, body, actionURL string) error
 }

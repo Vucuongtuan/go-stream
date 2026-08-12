@@ -38,6 +38,12 @@ func (r *userRepository) FindByEmail(email string) (*domain.User, error) {
 	return &user, nil
 }
 
+func (r *userRepository) FindByRole(role string) ([]domain.User, error) {
+	var users []domain.User
+	err := r.db.Where("role = ?", role).Find(&users).Error
+	return users, err
+}
+
 func (r *userRepository) Create(user *domain.User) error {
 	return r.db.Create(user).Error
 }
@@ -49,4 +55,3 @@ func (r *userRepository) Update(user *domain.User) error {
 func (r *userRepository) Delete(id uint) error {
 	return r.db.Delete(&domain.User{}, id).Error
 }
-

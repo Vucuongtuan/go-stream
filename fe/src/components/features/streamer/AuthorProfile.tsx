@@ -1,13 +1,15 @@
 "use client";
 
-import React, { useState, useRef, useCallback } from "react";
+import React, { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { MainLayout } from "@/components/layouts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
 import { useAuth } from "@/hooks/useAuth";
 import { EditProfileModal } from "./EditProfileModal";
 import { formatNumber } from "@/utils/format";
+import { resolveMediaUrl } from "@/utils/resolveMediaUrl";
 
 /* ─────────────────────────────────────────────
    Types
@@ -27,6 +29,12 @@ export type Room = {
   viewer_count: number; playback_url?: string;
   host: Host; category?: Category;
 };
+export type ShortVideo = {
+  id: number; title: string; description?: string; video_url: string;
+  thumbnail_url?: string; duration_seconds: number; view_count: number;
+  created_at: string;
+};
+type AuthorChannel = { id: number; follower_count: number; view_total_count: number; };
 
 type AuthorProfileProps = { slug: string; };
 
@@ -34,16 +42,39 @@ type AuthorProfileProps = { slug: string; };
    Main AuthorProfile component
 ───────────────────────────────────────────── */
 export function AuthorProfile({ slug }: AuthorProfileProps) {
-  const [activeTab, setActiveTab] = useState<"streams" | "about">("streams");
+  const [activeTab, setActiveTab] = useState<"streams" | "videos" | "about">("streams");
   const [showEditModal, setShowEditModal] = useState(false);
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [videoTitle, setVideoTitle] = useState("");
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [followError, setFollowError] = useState<string | null>(null);
+  const [followPending, setFollowPending] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [localOverrides, setLocalOverrides] = useState<Partial<Host & { cover_url: string }>>({});
   const { user: currentUser } = useAuth();
+  const router = useRouter();
+  const queryClient = useQueryClient();
 
   const { data: room, isLoading, error } = useQuery<Room>({
     queryKey: ["streamer-profile", slug],
     queryFn: () => apiClient.get<Room>(`/api/streamers/${slug}`),
     enabled: !!slug,
     retry: 1,
+  });
+  const { data: videos = [], isLoading: videosLoading } = useQuery<ShortVideo[]>({
+    queryKey: ["author-videos", slug],
+    queryFn: () => apiClient.get<ShortVideo[]>(`/api/authors/${slug}/videos`),
+    enabled: !!slug,
+  });
+  const { data: followStatus } = useQuery<{ following: boolean }>({
+    queryKey: ["author-follow-status", slug, currentUser?.id],
+    queryFn: () => apiClient.get<{ following: boolean }>(`/api/authors/${slug}/follow-status`),
+    enabled: !!slug && !!currentUser,
+  });
+  const { data: authorChannel } = useQuery<AuthorChannel>({
+    queryKey: ["author-channel", slug],
+    queryFn: () => apiClient.get<AuthorChannel>(`/api/authors/${slug}`),
+    enabled: !!slug,
   });
 
   // Merge server data with any local optimistic overrides after save
@@ -53,7 +84,7 @@ export function AuthorProfile({ slug }: AuthorProfileProps) {
 
   const coverUrl: string | null =
     (localOverrides.cover_url as string | undefined) ??
-    (host as any)?.cover_url ??
+    host?.cover_url ??
     null;
 
   const hostName = host?.name ?? slug;
@@ -64,6 +95,42 @@ export function AuthorProfile({ slug }: AuthorProfileProps) {
     !!currentUser &&
     !!host &&
     (currentUser.slug === slug || currentUser.id === host.id);
+  const isFollowing = followStatus?.following === true;
+  const followerCount = authorChannel?.follower_count ?? host?.follower_count ?? 0;
+  const totalViews = authorChannel?.view_total_count ?? host?.total_views ?? 0;
+
+  const toggleFollow = async () => {
+    if (!currentUser) { router.push("/login"); return; }
+    setFollowPending(true);
+    setFollowError(null);
+    try {
+      if (isFollowing) await apiClient.delete(`/api/authors/${slug}/follow`);
+      else await apiClient.post(`/api/authors/${slug}/follow`);
+      await queryClient.invalidateQueries({ queryKey: ["author-follow-status", slug, currentUser.id] });
+      await queryClient.invalidateQueries({ queryKey: ["author-channel", slug] });
+      await queryClient.invalidateQueries({ queryKey: ["streamer-profile", slug] });
+    } catch (followError) {
+      setFollowError(followError instanceof Error ? followError.message : "Không thể cập nhật theo dõi");
+    } finally { setFollowPending(false); }
+  };
+
+  const uploadVideo = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!videoFile || !videoTitle.trim()) return;
+    setUploading(true); setUploadError(null);
+    try {
+      const form = new FormData();
+      form.append("video", videoFile);
+      form.append("title", videoTitle.trim());
+      form.append("author_slug", slug);
+      await apiClient.post<ShortVideo>("/api/videos", form);
+      setVideoFile(null); setVideoTitle("");
+      event.currentTarget.reset();
+      await queryClient.invalidateQueries({ queryKey: ["author-videos", slug] });
+    } catch (uploadError) {
+      setUploadError(uploadError instanceof Error ? uploadError.message : "Không thể đăng video");
+    } finally { setUploading(false); }
+  };
 
   /* ── Loading ── */
   if (isLoading) {
@@ -220,8 +287,8 @@ export function AuthorProfile({ slug }: AuthorProfileProps) {
                   Chỉnh sửa
                 </button>
               ) : (
-                <button className="rounded-xl bg-emerald-600 hover:bg-emerald-500 px-5 py-2.5 text-xs font-bold text-white shadow-lg transition-all border border-emerald-500/20 cursor-pointer">
-                  Theo dõi
+                <button disabled={followPending} onClick={toggleFollow} className={`rounded-xl px-5 py-2.5 text-xs font-bold shadow-lg transition-all border cursor-pointer disabled:cursor-wait disabled:opacity-60 ${isFollowing ? "border-zinc-600 bg-zinc-800 text-zinc-200 hover:bg-zinc-700" : "border-emerald-500/20 bg-emerald-600 text-white hover:bg-emerald-500"}`}>
+                  {followPending ? "Đang cập nhật..." : isFollowing ? "Đang theo dõi" : "Theo dõi"}
                 </button>
               )}
               <button className="rounded-xl bg-zinc-800 hover:bg-zinc-700 px-3 py-2.5 text-zinc-400 hover:text-white transition-all border border-zinc-700/50 cursor-pointer">
@@ -231,15 +298,16 @@ export function AuthorProfile({ slug }: AuthorProfileProps) {
               </button>
             </div>
           </div>
+          {followError && <p className="mt-2 text-right text-xs font-medium text-rose-400">{followError}</p>}
 
           {/* Stats row */}
           <div className="mt-5 flex flex-wrap gap-6">
             <div className="space-y-0.5 text-center">
-              <p className="text-lg font-black text-white">{formatNumber(host.follower_count)}</p>
+              <p className="text-lg font-black text-white">{formatNumber(followerCount)}</p>
               <p className="text-[11px] text-zinc-500 font-medium">Người theo dõi</p>
             </div>
             <div className="space-y-0.5 text-center">
-              <p className="text-lg font-black text-white">{formatNumber(host.total_views)}</p>
+              <p className="text-lg font-black text-white">{formatNumber(totalViews)}</p>
               <p className="text-[11px] text-zinc-500 font-medium">Lượt xem</p>
             </div>
           </div>
@@ -248,7 +316,7 @@ export function AuthorProfile({ slug }: AuthorProfileProps) {
         {/* ── Tabs ── */}
         <div className="px-4 md:px-6 border-b border-zinc-800/60 mb-8">
           <div className="flex">
-            {(["streams", "about"] as const).map((tab) => (
+            {(["streams", "videos", "about"] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -256,7 +324,7 @@ export function AuthorProfile({ slug }: AuthorProfileProps) {
                   activeTab === tab ? "text-emerald-400" : "text-zinc-500 hover:text-zinc-300"
                 }`}
               >
-                {tab === "streams" ? "Streams & Live" : "Giới thiệu"}
+                {tab === "streams" ? "Streams & Live" : tab === "videos" ? "Video ngắn" : "Giới thiệu"}
                 {activeTab === tab && (
                   <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-500 rounded-full" />
                 )}
@@ -340,6 +408,32 @@ export function AuthorProfile({ slug }: AuthorProfileProps) {
             </div>
           )}
 
+          {activeTab === "videos" && (
+            <div className="space-y-6">
+              {isFollowing && !isOwner && (
+                <form onSubmit={uploadVideo} className="rounded-2xl border border-emerald-500/20 bg-emerald-950/10 p-4 space-y-3">
+                  <p className="text-sm font-bold text-white">Đăng video cho kênh {hostName}</p>
+                  <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+                    <input value={videoTitle} onChange={(e) => setVideoTitle(e.target.value)} maxLength={255} required placeholder="Tiêu đề video" className="rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-500" />
+                    <input type="file" accept="video/mp4,video/webm,video/quicktime" required onChange={(e) => setVideoFile(e.target.files?.[0] ?? null)} className="text-xs text-zinc-400 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-700 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white" />
+                  </div>
+                  {uploadError && <p className="text-xs text-red-400">{uploadError}</p>}
+                  <button disabled={uploading} className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white disabled:opacity-60">{uploading ? "Đang đăng..." : "Đăng video"}</button>
+                </form>
+              )}
+              {videosLoading ? <p className="py-12 text-center text-sm text-zinc-500">Đang tải video...</p> : videos.length > 0 ? (
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {videos.map((video) => (
+                    <article key={video.id} className="overflow-hidden rounded-2xl border border-white/5 bg-zinc-900/40">
+                      <video controls preload="metadata" poster={resolveMediaUrl(video.thumbnail_url)} className="aspect-[9/14] w-full bg-black object-cover"><source src={resolveMediaUrl(video.video_url)} /></video>
+                      <div className="p-3"><h3 className="truncate text-sm font-bold text-white">{video.title}</h3><p className="mt-1 text-xs text-zinc-500">👁 {formatNumber(video.view_count)} · {new Date(video.created_at).toLocaleDateString("vi-VN")}</p></div>
+                    </article>
+                  ))}
+                </div>
+              ) : <p className="py-16 text-center text-sm text-zinc-500">{isFollowing && !isOwner ? "Hãy là người đầu tiên đăng video cho kênh này." : "Streamer này chưa có video ngắn."}</p>}
+            </div>
+          )}
+
           {activeTab === "about" && (
             <div className="max-w-2xl space-y-6">
               <div className="rounded-2xl border border-white/5 bg-zinc-900/30 p-6 space-y-3">
@@ -393,8 +487,8 @@ export function AuthorProfile({ slug }: AuthorProfileProps) {
 
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  { label: "Người theo dõi", value: formatNumber(host.follower_count), icon: "👥" },
-                  { label: "Tổng lượt xem", value: formatNumber(host.total_views), icon: "👁️" },
+                  { label: "Người theo dõi", value: formatNumber(followerCount), icon: "👥" },
+                  { label: "Tổng lượt xem", value: formatNumber(totalViews), icon: "👁️" },
                 ].map((s) => (
                   <div key={s.label} className="flex flex-col items-center gap-1.5 rounded-2xl border border-white/5 bg-zinc-900/40 p-4">
                     <span className="text-xl">{s.icon}</span>

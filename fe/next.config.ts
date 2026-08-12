@@ -12,6 +12,13 @@ const nextConfig: NextConfig = {
         source: "/api/:path*",
         destination: `${apiProxyTarget}/api/:path*`,
       },
+      {
+        // Media URLs are deliberately relative so a phone on the LAN does not
+        // attempt to play from its own localhost. Proxy them through Next in
+        // development, just like API calls.
+        source: "/storage/:path*",
+        destination: `${apiProxyTarget}/storage/:path*`,
+      },
     ];
   },
 };

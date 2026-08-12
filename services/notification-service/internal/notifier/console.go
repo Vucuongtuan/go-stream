@@ -57,3 +57,17 @@ func (n *ConsoleNotifier) OnChatMessage(roomID, userID uint, userName, content s
 	)
 	return nil
 }
+
+// OnNotificationCreated is the delivery seam for mobile push providers. The
+// persisted inbox was already created by main-api, so a failed delivery can be
+// retried without losing the notification or its read state.
+func (n *ConsoleNotifier) OnNotificationCreated(notificationID, userID uint, notificationType, title, body, actionURL string) error {
+	slog.Info("🔔 NOTIFICATION: durable inbox item created",
+		"notification_id", notificationID,
+		"user_id", userID,
+		"type", notificationType,
+		"title", title,
+		"action_url", actionURL,
+	)
+	return nil
+}

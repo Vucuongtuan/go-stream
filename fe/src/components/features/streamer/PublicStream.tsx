@@ -6,7 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { apiClient } from "@/lib/api-client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/authStore";
 import { resolveMediaUrl } from "@/utils/resolveMediaUrl";
 import { 
@@ -17,6 +17,7 @@ import {
   Maximize, 
   Minimize, 
   Settings, 
+  Scissors,
   Check,
   RefreshCw,
   Eye,
@@ -27,6 +28,8 @@ import {
   Coins,
   X,
 } from "lucide-react";
+import { LiveClipEditor } from "./LiveClipEditor";
+import { ClipPublishModal, ClipRange } from "./ClipPublishModal";
 
 interface Tag {
   id: number;
@@ -92,6 +95,7 @@ interface PublicStreamProps {
 export function PublicStream({ slug }: PublicStreamProps) {
   const { user: currentUser, isAuthenticated } = useAuth();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { setCoinBalance } = useAuthStore();
   
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -121,6 +125,12 @@ export function PublicStream({ slug }: PublicStreamProps) {
   const [showResMenu, setShowResMenu] = useState(false);
   const [isStreamLoading, setIsStreamLoading] = useState(true);
   const [actualHeight, setActualHeight] = useState<string>("Auto");
+  const [clipEditorOpenedAt, setClipEditorOpenedAt] = useState<number | null>(null);
+  const [clipPublishRange, setClipPublishRange] = useState<ClipRange | null>(null);
+  const [clipSubmitting, setClipSubmitting] = useState(false);
+  const [clipAccessMessage, setClipAccessMessage] = useState<string | null>(null);
+  const [clipDraftMessage, setClipDraftMessage] = useState<string | null>(null);
+  const [followPending, setFollowPending] = useState(false);
 
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -137,11 +147,18 @@ export function PublicStream({ slug }: PublicStreamProps) {
     queryFn: () => apiClient.get<StreamGift[]>("/api/gifts"),
     staleTime: 5 * 60 * 1000,
   });
+  const playbackURL = resolveMediaUrl(room?.playback_url);
+  const { data: followStatus, isLoading: isFollowStatusLoading } = useQuery<{ following: boolean }>({
+    queryKey: ["live-follow-status", slug, currentUser?.id],
+    queryFn: () => apiClient.get<{ following: boolean }>(`/api/authors/${slug}/follow-status`),
+    enabled: !!slug && isAuthenticated,
+    retry: false,
+  });
 
   // 1.5 Load HLS live video using hls.js on client-side
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !room || !room.playback_url || room.status !== "live") return;
+    if (!video || !room || !playbackURL || room.status !== "live") return;
 
     setIsStreamLoading(true);
     let hls: any;
@@ -164,7 +181,7 @@ export function PublicStream({ slug }: PublicStreamProps) {
         });
         hlsRef.current = hls;
 
-        hls.loadSource(room.playback_url!);
+        hls.loadSource(playbackURL);
         hls.attachMedia(video);
         
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
@@ -206,7 +223,7 @@ export function PublicStream({ slug }: PublicStreamProps) {
               default:
                 // A bad variant can occur during a rendition restart. Reload
                 // the manifest once so Hls.js can select a healthy level.
-                hls.loadSource(room.playback_url!);
+                hls.loadSource(playbackURL);
                 hls.startLoad();
                 break;
             }
@@ -214,7 +231,7 @@ export function PublicStream({ slug }: PublicStreamProps) {
         });
       } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
         // Native HLS (Safari)
-        video.src = room.playback_url!;
+        video.src = playbackURL;
         video.addEventListener("loadedmetadata", () => {
           setIsStreamLoading(false);
           video.play()
@@ -233,7 +250,7 @@ export function PublicStream({ slug }: PublicStreamProps) {
         hlsRef.current = null;
       }
     };
-  }, [room?.playback_url, room?.status]);
+  }, [playbackURL, room?.status]);
 
   // Guest limit: if not logged in and stream is live, direct them to the login page after 15 seconds.
   useEffect(() => {
@@ -484,12 +501,34 @@ export function PublicStream({ slug }: PublicStreamProps) {
   }, [isPlaying]);
 
   const handleRefreshStream = () => {
-    if (hlsRef.current && room?.playback_url) {
+    if (hlsRef.current && playbackURL) {
       setIsStreamLoading(true);
-      hlsRef.current.loadSource(room.playback_url);
+      hlsRef.current.loadSource(playbackURL);
       hlsRef.current.startLoad();
       setTimeout(() => setIsStreamLoading(false), 500);
     }
+  };
+
+  const openClipEditor = () => {
+    setClipAccessMessage(null);
+    setClipDraftMessage(null);
+    if (!isAuthenticated) { router.push("/login"); return; }
+    if (isFollowStatusLoading) { setClipAccessMessage("Đang kiểm tra quyền cắt video..."); return; }
+    if (!followStatus?.following) { setClipAccessMessage("Bạn cần theo dõi streamer trước khi cắt video."); return; }
+    setClipEditorOpenedAt(Date.now());
+  };
+
+  const toggleFollow = async () => {
+    if (!isAuthenticated) { router.push("/login"); return; }
+    setFollowPending(true);
+    setClipAccessMessage(null);
+    try {
+      if (followStatus?.following) await apiClient.delete(`/api/authors/${slug}/follow`);
+      else await apiClient.post(`/api/authors/${slug}/follow`);
+      await queryClient.invalidateQueries({ queryKey: ["live-follow-status", slug, currentUser?.id] });
+    } catch (followError) {
+      setClipAccessMessage(followError instanceof Error ? followError.message : "Không thể cập nhật theo dõi.");
+    } finally { setFollowPending(false); }
   };
 
   if (loading) {
@@ -550,7 +589,7 @@ export function PublicStream({ slug }: PublicStreamProps) {
           >
             {isLive ? (
               <div className="w-full h-full relative">
-                {room.playback_url ? (
+                {playbackURL ? (
                   <>
                     <video
                       ref={videoRef}
@@ -587,6 +626,9 @@ export function PublicStream({ slug }: PublicStreamProps) {
                         </div>
 
                         <div className="flex items-center gap-2">
+                          <button onClick={toggleFollow} disabled={followPending} className={`rounded-lg border px-2.5 py-1 text-[10px] font-bold transition disabled:opacity-60 ${followStatus?.following ? "border-white/15 bg-zinc-900/80 text-zinc-200 hover:bg-zinc-800" : "border-emerald-400/40 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20"}`}>
+                            {followPending ? "Đang cập nhật" : followStatus?.following ? "Đang theo dõi" : "Theo dõi"}
+                          </button>
                           <button 
                             onClick={handleRefreshStream}
                             className="p-1.5 rounded-lg bg-zinc-950/60 hover:bg-zinc-900 border border-white/5 text-zinc-450 hover:text-white transition-all cursor-pointer"
@@ -643,6 +685,9 @@ export function PublicStream({ slug }: PublicStreamProps) {
 
                         {/* Settings / Resolution & Fullscreen */}
                         <div className="flex items-center gap-3.5 relative">
+                          <button onClick={openClipEditor} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-2.5 py-1 text-[10px] font-bold text-emerald-200 transition hover:border-emerald-300 hover:bg-emerald-400/20" title="Cắt đoạn live vừa phát">
+                            <Scissors className="h-3.5 w-3.5" />Cắt video
+                          </button>
                           
                           {/* Resolution Label / Selector Trigger */}
                           <div className="relative">
@@ -903,6 +948,20 @@ export function PublicStream({ slug }: PublicStreamProps) {
         </aside>
         </div>
       </main>
+      {clipAccessMessage && <div className="fixed bottom-5 left-1/2 z-[90] -translate-x-1/2 rounded-xl border border-amber-400/30 bg-zinc-950/95 px-4 py-3 text-xs font-semibold text-amber-200 shadow-2xl">{clipAccessMessage}</div>}
+      {clipDraftMessage && <div className="fixed bottom-5 left-1/2 z-[90] -translate-x-1/2 rounded-xl border border-emerald-400/30 bg-zinc-950/95 px-4 py-3 text-xs font-semibold text-emerald-200 shadow-2xl">{clipDraftMessage}</div>}
+      {clipEditorOpenedAt && <LiveClipEditor openedAt={clipEditorOpenedAt} onClose={() => setClipEditorOpenedAt(null)} onConfirm={(range) => { setClipEditorOpenedAt(null); setClipPublishRange(range); }} />}
+      {clipPublishRange && <ClipPublishModal authorName={room.host.name} range={clipPublishRange} submitting={clipSubmitting} onClose={() => setClipPublishRange(null)} onConfirm={async (draft) => {
+        if (!draft.publishToAuthor) { setClipPublishRange(null); setClipDraftMessage(`Đã lưu lựa chọn cho clip “${draft.title}”.`); return; }
+        setClipSubmitting(true);
+        try {
+          await apiClient.post(`/api/rooms/${room.id}/clips`, { title: draft.title, description: draft.description, duration_seconds: draft.durationSeconds });
+          setClipPublishRange(null);
+          setClipDraftMessage(`Clip “${draft.title}” đã được render và đăng vào kênh ${room.host.name}.`);
+        } catch (clipError) {
+          setClipAccessMessage(clipError instanceof Error ? clipError.message : "Không thể render clip.");
+        } finally { setClipSubmitting(false); }
+      }} />}
     </MainLayout>
   );
 }

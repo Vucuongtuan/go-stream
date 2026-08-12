@@ -8,11 +8,13 @@ import (
 )
 
 type authorService struct {
-	authorRepo domain.AuthorRepository
+	authorRepo    domain.AuthorRepository
+	users         domain.UserRepository
+	notifications domain.NotificationService
 }
 
-func NewAuthorService(authorRepo domain.AuthorRepository) domain.AuthorService {
-	return &authorService{authorRepo: authorRepo}
+func NewAuthorService(authorRepo domain.AuthorRepository, users domain.UserRepository, notifications domain.NotificationService) domain.AuthorService {
+	return &authorService{authorRepo: authorRepo, users: users, notifications: notifications}
 }
 
 func (s *authorService) Apply(userID uint, displayName, bio string, categoryIDs []uint) (*domain.Author, error) {
@@ -37,6 +39,7 @@ func (s *authorService) Apply(userID uint, displayName, bio string, categoryIDs 
 		if err := s.authorRepo.SyncCategories(existing.ID, categoryIDs); err != nil {
 			return nil, err
 		}
+		s.notifyAdminsOfApplication(existing)
 		return existing, nil
 	}
 
@@ -58,6 +61,7 @@ func (s *authorService) Apply(userID uint, displayName, bio string, categoryIDs 
 		}
 	}
 
+	s.notifyAdminsOfApplication(author)
 	return author, nil
 }
 
@@ -67,6 +71,10 @@ func (s *authorService) GetAuthorByID(id uint) (*domain.Author, error) {
 
 func (s *authorService) GetAuthorByUserID(userID uint) (*domain.Author, error) {
 	return s.authorRepo.FindByUserID(userID)
+}
+
+func (s *authorService) GetAuthorByUserSlug(slug string) (*domain.Author, error) {
+	return s.authorRepo.FindByUserSlug(slug)
 }
 
 func (s *authorService) GetApprovedAuthors(limit, offset int) ([]domain.Author, error) {
@@ -111,7 +119,15 @@ func (s *authorService) UpdateProfile(
 
 func (s *authorService) ApproveAuthor(authorID uint) error {
 	now := time.Now()
-	return s.authorRepo.UpdateStatus(authorID, domain.AuthorStatusApproved, &now)
+	if err := s.authorRepo.UpdateStatus(authorID, domain.AuthorStatusApproved, &now); err != nil {
+		return err
+	}
+	if s.notifications != nil {
+		if author, err := s.authorRepo.FindByID(authorID); err == nil {
+			_ = s.notifications.Create(author.UserID, "author.application_approved", "Bạn đã được phê duyệt làm Streamer", "Yêu cầu quyền live cho kênh "+author.DisplayName+" đã được quản trị viên chấp nhận.", "/streamer", map[string]any{"author_id": author.ID, "status": "approved"})
+		}
+	}
+	return nil
 }
 
 func (s *authorService) RejectAuthor(authorID uint) error {
@@ -120,4 +136,17 @@ func (s *authorService) RejectAuthor(authorID uint) error {
 
 func (s *authorService) SuspendAuthor(authorID uint) error {
 	return s.authorRepo.UpdateStatus(authorID, domain.AuthorStatusSuspended, nil)
+}
+
+func (s *authorService) notifyAdminsOfApplication(author *domain.Author) {
+	if s.notifications == nil || s.users == nil {
+		return
+	}
+	admins, err := s.users.FindByRole("admin")
+	if err != nil {
+		return
+	}
+	for _, admin := range admins {
+		_ = s.notifications.Create(admin.ID, "author.application_submitted", "Có yêu cầu quyền live mới", author.DisplayName+" vừa gửi yêu cầu làm Streamer và cần được phê duyệt.", "/admin", map[string]any{"author_id": author.ID, "applicant_user_id": author.UserID, "status": "pending"})
+	}
 }

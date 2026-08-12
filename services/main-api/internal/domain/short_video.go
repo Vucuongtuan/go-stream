@@ -60,6 +60,8 @@ type ShortVideoService interface {
 	GetVideoByID(id uint) (*ShortVideo, error)
 	GetVideosByAuthor(authorID uint, limit, offset int) ([]ShortVideo, error)
 	UploadVideo(authorID, uploaderID uint, sessionID *uint, title, description, videoURL, thumbnail string, duration int, source VideoSource, tagIDs []uint) (*ShortVideo, error)
+	CreateLiveClip(authorID, uploaderID uint, title, description, videoURL string, duration int) (*ShortVideo, error)
+	UpdateVideo(videoID, uploaderID uint, title, description, thumbnail string, status VideoStatus, tagIDs []uint) (*ShortVideo, error)
 	DeleteVideo(videoID, uploaderID uint) error
 	RecordView(videoID uint) error
 }

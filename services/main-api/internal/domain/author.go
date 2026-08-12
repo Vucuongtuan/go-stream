@@ -16,15 +16,15 @@ const (
 )
 
 type Author struct {
-	ID          uint           `gorm:"primaryKey"              json:"id"`
-	UserID      uint           `gorm:"uniqueIndex;not null"    json:"user_id"`
-	DisplayName string         `gorm:"not null;size:100"       json:"display_name"`
-	Bio         string         `gorm:"size:2000"               json:"bio,omitempty"`
-	Avatar      string         `gorm:"size:512"                json:"avatar,omitempty"`
-	CoverImage  string         `gorm:"size:512"                json:"cover_image,omitempty"`
-	Status      AuthorStatus   `gorm:"default:pending;size:20" json:"status"`
-	AppliedAt   time.Time      `json:"applied_at"`
-	ApprovedAt  *time.Time     `json:"approved_at,omitempty"`
+	ID          uint         `gorm:"primaryKey"              json:"id"`
+	UserID      uint         `gorm:"uniqueIndex;not null"    json:"user_id"`
+	DisplayName string       `gorm:"not null;size:100"       json:"display_name"`
+	Bio         string       `gorm:"size:2000"               json:"bio,omitempty"`
+	Avatar      string       `gorm:"size:512"                json:"avatar,omitempty"`
+	CoverImage  string       `gorm:"size:512"                json:"cover_image,omitempty"`
+	Status      AuthorStatus `gorm:"default:pending;size:20" json:"status"`
+	AppliedAt   time.Time    `json:"applied_at"`
+	ApprovedAt  *time.Time   `json:"approved_at,omitempty"`
 
 	FollowerCount  int `gorm:"default:0" json:"follower_count"`
 	ViewTotalCount int `gorm:"default:0" json:"view_total_count"`
@@ -49,6 +49,7 @@ type AuthorRepository interface {
 	FindAll(status *AuthorStatus, limit, offset int) ([]Author, error)
 	FindByID(id uint) (*Author, error)
 	FindByUserID(userID uint) (*Author, error)
+	FindByUserSlug(slug string) (*Author, error)
 	Create(author *Author) error
 	Update(author *Author) error
 	UpdateStatus(id uint, status AuthorStatus, approvedAt *time.Time) error
@@ -59,6 +60,7 @@ type AuthorService interface {
 	Apply(userID uint, displayName, bio string, categoryIDs []uint) (*Author, error)
 	GetAuthorByID(id uint) (*Author, error)
 	GetAuthorByUserID(userID uint) (*Author, error)
+	GetAuthorByUserSlug(slug string) (*Author, error)
 	GetApprovedAuthors(limit, offset int) ([]Author, error)
 	UpdateProfile(authorID, userID uint, displayName, bio, avatar, coverImage string, socialLinks []SocialLink, categoryIDs []uint) (*Author, error)
 

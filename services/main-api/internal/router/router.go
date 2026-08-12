@@ -36,6 +36,9 @@ func SetupRoutes(
 	pollHandler *handler.PollHandler,
 	moderationHandler *handler.ModerationHandler,
 	giftHandler *handler.GiftHandler,
+	shortVideoHandler *handler.ShortVideoHandler,
+	authorFollowHandler *handler.AuthorFollowHandler,
+	notificationHandler *handler.NotificationHandler,
 	userRepo domain.UserRepository,
 ) {
 	storagePath := config.GetEnv("STORAGE_PATH", "./storage")
@@ -108,6 +111,21 @@ func SetupRoutes(
 	mux.Handle("PUT /api/rooms/{id}/tags", auth(tagHandler.SyncRoomTags))
 	mux.HandleFunc("GET /api/videos/{id}/tags", tagHandler.GetTagsByShortVideo)
 	mux.Handle("PUT /api/videos/{id}/tags", auth(tagHandler.SyncShortVideoTags))
+	mux.HandleFunc("GET /api/videos/feed", shortVideoHandler.GetFeed)
+	mux.HandleFunc("GET /api/videos/{id}", shortVideoHandler.GetByID)
+	mux.Handle("POST /api/videos", auth(shortVideoHandler.Upload))
+	mux.Handle("POST /api/rooms/{id}/clips", auth(shortVideoHandler.CreateLiveClip))
+	mux.Handle("PUT /api/videos/{id}", auth(shortVideoHandler.Update))
+	mux.Handle("DELETE /api/videos/{id}", auth(shortVideoHandler.Delete))
+	mux.HandleFunc("POST /api/videos/{id}/view", shortVideoHandler.RecordView)
+	mux.HandleFunc("GET /api/authors/{slug}/videos", shortVideoHandler.GetByAuthorSlug)
+	mux.Handle("POST /api/authors/{slug}/follow", auth(authorFollowHandler.Follow))
+	mux.Handle("DELETE /api/authors/{slug}/follow", auth(authorFollowHandler.Unfollow))
+	mux.Handle("GET /api/authors/{slug}/follow-status", auth(authorFollowHandler.Status))
+	mux.Handle("GET /api/authors/following", auth(authorFollowHandler.ListFollowing))
+	mux.Handle("GET /api/notifications", auth(notificationHandler.List))
+	mux.Handle("PUT /api/notifications/read-all", auth(notificationHandler.MarkAllRead))
+	mux.Handle("PUT /api/notifications/{id}/read", auth(notificationHandler.MarkRead))
 
 	mux.HandleFunc("GET /api/rooms", roomHandler.GetLiveRooms)
 	mux.HandleFunc("GET /api/rooms/{id}", roomHandler.GetRoom)
@@ -134,6 +152,7 @@ func SetupRoutes(
 	}
 	mux.Handle("POST /api/authors/apply", auth(authorHandler.Apply))
 	mux.Handle("PUT /api/authors/me/profile", auth(authorHandler.UpdateMyProfile))
+	mux.HandleFunc("GET /api/authors/{slug}", authorHandler.GetPublicProfile)
 	mux.Handle("GET /api/admin/authors", admin(authorHandler.ListCandidates))
 	mux.Handle("PUT /api/admin/authors/{id}/approve", admin(authorHandler.Approve))
 	mux.Handle("PUT /api/admin/authors/{id}/reject", admin(authorHandler.Reject))
